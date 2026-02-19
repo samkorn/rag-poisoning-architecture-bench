@@ -1,0 +1,68 @@
+import sys
+import os
+import time
+
+from qa_system import QASystem
+from utils import execute_llm_call
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from embeddings.vector_store import VectorStore
+
+
+class VanillaRAG(QASystem):
+
+    def __init__(self, corpus_type: str, top_k: int = 5, **kwargs):
+        super().__init__(
+            architecture='vanilla_rag',
+            corpus_type=corpus_type,
+            top_k=top_k,
+            **kwargs
+        )
+        self.vector_store = VectorStore(self.corpus_type)
+
+    def _run(self, question: str, query_id: str) -> str:
+        retrieved_document_results = self.vector_store.retrieve(
+            question=question,
+            top_k=self.top_k,
+            query_id=query_id
+        )
+        retrieved_documents = [result['text'] for result in retrieved_document_results]
+        context = "\n\n".join(retrieved_documents)
+        user_prompt = f"Context:\n{context}\n\nQuestion: {question}"
+        answer = execute_llm_call(
+            model_id=self.model_id,
+            system_prompt=self.system_prompt,
+            user_prompt=user_prompt,
+        )
+        return answer
+
+
+if __name__ == "__main__":
+    print("=== Sanity check: Vanilla RAG ===\n")
+    qa_system = VanillaRAG(corpus_type='original')
+    
+    # test a real question that's in the corpus
+    question1 = "What is the capital of France?"
+    print(f"QUESTION 1: {question1}")
+    t0 = time.time()
+    answer1 = qa_system.run(question=question1)
+    print(f"ANSWER 1: {answer1}")
+    print(f"(Time taken: {time.time() - t0:.2f} seconds)\n")
+    
+    # test a real question that's not in the corpus
+    question2 = "Who did Luigi Mangione assassinate?"
+    print(f"QUESTION 2: {question2}")
+    t0 = time.time()
+    answer2 = qa_system.run(question=question2)
+    print(f"ANSWER 2: {answer2}")
+    print(f"(Time taken: {time.time() - t0:.2f} seconds)\n")
+    
+    # test a nonsensical question that's not in the corpus
+    question3 = "Who was the Grand Vizier of Shmorgasborgistan in 1742?"
+    print(f"QUESTION 3: {question3}")
+    t0 = time.time()
+    answer3 = qa_system.run(question=question3)
+    print(f"ANSWER 3: {answer3}")
+    print(f"(Time taken: {time.time() - t0:.2f} seconds)\n")
+
+    # exit without waiting for large variables to be garbage collected
+    os._exit(0)
