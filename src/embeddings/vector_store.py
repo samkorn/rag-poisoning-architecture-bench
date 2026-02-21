@@ -1,7 +1,7 @@
 """
 Retrieve top-K documents from pre-built FAISS indexes.
 
-Supports 3 corpus types: original, naive_poisoned, adversarial_poisoned.
+Supports 3 corpus types: original, naive_poisoned, poisonedrag_poisoned.
 Uses pre-computed query embeddings when a query_id is provided (fast path),
 or falls back to live Contriever embedding (slow path).
 
@@ -41,15 +41,15 @@ INDEX_PATHS = {
         'index': os.path.join(VECTOR_STORE_DIR, 'nq-naive-poisoned.faiss'),
         'doc_ids': os.path.join(VECTOR_STORE_DIR, 'nq-naive-poisoned-doc-ids.pkl'),
     },
-    'adversarial_poisoned': {
-        'index': os.path.join(VECTOR_STORE_DIR, 'nq-adversarial-poisoned.faiss'),
-        'doc_ids': os.path.join(VECTOR_STORE_DIR, 'nq-adversarial-poisoned-doc-ids.pkl'),
+    'poisonedrag_poisoned': {
+        'index': os.path.join(VECTOR_STORE_DIR, 'nq-poisonedrag-poisoned.faiss'),
+        'doc_ids': os.path.join(VECTOR_STORE_DIR, 'nq-poisonedrag-poisoned-doc-ids.pkl'),
     },
 }
 CORPUS_PATHS = {
     'original': os.path.join(_DATA_BASE, 'original-datasets', 'nq', 'corpus.jsonl'),
     'naive_poisoned': os.path.join(_DATA_BASE, 'experiment-datasets', 'nq-naive-poisoning', 'corpus.jsonl'),
-    'adversarial_poisoned': os.path.join(_DATA_BASE, 'experiment-datasets', 'nq-adversarial-poisoning', 'corpus.jsonl'),
+    'poisonedrag_poisoned': os.path.join(_DATA_BASE, 'experiment-datasets', 'nq-poisonedrag-poisoning', 'corpus.jsonl'),
 }
 
 
@@ -214,7 +214,7 @@ if __name__ == '__main__':
 
     print("=== Sanity check: retrieving for test0 across all 3 indexes ===\n")
     query_id = 'test0'
-    for corpus_type in ['original', 'naive_poisoned', 'adversarial_poisoned']:
+    for corpus_type in ['original', 'naive_poisoned', 'poisonedrag_poisoned']:
         print(f"--- {corpus_type} (top 5) ---")
         vs = VectorStore(corpus_type)
         print(f"Retrieving for query {query_id} in {corpus_type}...")
@@ -229,8 +229,8 @@ if __name__ == '__main__':
             print(f"     {r['text'][:120]}...")
         print()
 
-    print("=== Sanity check: retrieving for test0-4 for adversarial_poisoned index ===\n")
-    vs = VectorStore('adversarial_poisoned')
+    print("=== Sanity check: retrieving for test0-4 for poisonedrag_poisoned index ===\n")
+    vs = VectorStore('poisonedrag_poisoned')
     query_ids = ['test0', 'test1', 'test2', 'test3', 'test4']
     for query_id in query_ids:
         t0 = time.time()

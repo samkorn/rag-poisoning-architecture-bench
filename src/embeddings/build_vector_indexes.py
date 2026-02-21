@@ -1,11 +1,11 @@
 """
-Build 3 FAISS indexes (original, naive-poisoned, adversarial-poisoned) from
+Build 3 FAISS indexes (original, naive-poisoned, poisonedrag-poisoned) from
 pre-computed Contriever embeddings.
 
 Indexes are saved to workspace/data/vector-store/ as:
   - nq-original.faiss            + nq-original-doc-ids.pkl
   - nq-naive-poisoned.faiss      + nq-naive-poisoned-doc-ids.pkl
-  - nq-adversarial-poisoned.faiss + nq-adversarial-poisoned-doc-ids.pkl
+  - nq-poisonedrag-poisoned.faiss + nq-poisonedrag-poisoned-doc-ids.pkl
 
 Memory strategy: the ~8GB original embeddings dict is loaded once, stacked +
 normalized into a matrix, then the dict is freed. Poisoned indexes reuse the
@@ -25,7 +25,7 @@ EMBEDDING_DIM = 768
 EMBEDDINGS_PATHS = {
     'original': os.path.join(VECTOR_STORE_DIR, 'nq-original-documents-embeddings.pkl'),
     'naive_poisoned': os.path.join(VECTOR_STORE_DIR, 'nq-naive-poisoned-documents-embeddings.pkl'),
-    'adversarial_poisoned': os.path.join(VECTOR_STORE_DIR, 'nq-adversarial-poisoned-documents-embeddings.pkl'),
+    'poisonedrag_poisoned': os.path.join(VECTOR_STORE_DIR, 'nq-poisonedrag-poisoned-documents-embeddings.pkl'),
 }
 
 INDEX_PATHS = {
@@ -37,9 +37,9 @@ INDEX_PATHS = {
         'index': os.path.join(VECTOR_STORE_DIR, 'nq-naive-poisoned.faiss'),
         'doc_ids': os.path.join(VECTOR_STORE_DIR, 'nq-naive-poisoned-doc-ids.pkl'),
     },
-    'adversarial_poisoned': {
-        'index': os.path.join(VECTOR_STORE_DIR, 'nq-adversarial-poisoned.faiss'),
-        'doc_ids': os.path.join(VECTOR_STORE_DIR, 'nq-adversarial-poisoned-doc-ids.pkl'),
+    'poisonedrag_poisoned': {
+        'index': os.path.join(VECTOR_STORE_DIR, 'nq-poisonedrag-poisoned.faiss'),
+        'doc_ids': os.path.join(VECTOR_STORE_DIR, 'nq-poisonedrag-poisoned-doc-ids.pkl'),
     },
 }
 
@@ -108,9 +108,9 @@ if __name__ == '__main__':
     _save_index(index, combined_doc_ids, 'naive_poisoned')
     del index, combined_matrix, combined_doc_ids
 
-    # 3. Adversarial-poisoned index (original + adversarial poisoned docs)
-    print("\n=== Building ADVERSARIAL-POISONED index ===")
-    adv_dict = _load_pickle(EMBEDDINGS_PATHS['adversarial_poisoned'])
+    # 3. PoisonedRAG-poisoned index (original + poisonedrag poisoned docs)
+    print("\n=== Building POISONEDRAG-POISONED index ===")
+    adv_dict = _load_pickle(EMBEDDINGS_PATHS['poisonedrag_poisoned'])
     adv_matrix, adv_doc_ids = _normalize_embeddings_dict(adv_dict)
     del adv_dict
     combined_matrix = np.vstack([orig_matrix, adv_matrix])
@@ -120,7 +120,7 @@ if __name__ == '__main__':
     index = faiss.IndexFlatIP(EMBEDDING_DIM)
     index.add(combined_matrix)
     print(f"  Index size: {index.ntotal:,} vectors")
-    _save_index(index, combined_doc_ids, 'adversarial_poisoned')
+    _save_index(index, combined_doc_ids, 'poisonedrag_poisoned')
     del index, combined_matrix, combined_doc_ids
 
     del orig_matrix, orig_doc_ids

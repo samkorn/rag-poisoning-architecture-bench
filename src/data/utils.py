@@ -12,7 +12,7 @@ _QRELS_PATH = os.path.join(_DATA_BASE, 'original-datasets', 'nq', 'qrels', 'test
 _CORPUS_PATHS: dict[str, str] = {
     'original': os.path.join(_DATA_BASE, 'original-datasets', 'nq', 'corpus.jsonl'),
     'naive_poisoned': os.path.join(_DATA_BASE, 'experiment-datasets', 'nq-naive-poisoning', 'corpus.jsonl'),
-    'adversarial_poisoned': os.path.join(_DATA_BASE, 'experiment-datasets', 'nq-adversarial-poisoning', 'corpus.jsonl'),
+    'poisonedrag_poisoned': os.path.join(_DATA_BASE, 'experiment-datasets', 'nq-poisonedrag-poisoning', 'corpus.jsonl'),
 }
 
 _title_to_doc_ids_by_corpus_type: dict[str, dict[str, set[str]]] = {}

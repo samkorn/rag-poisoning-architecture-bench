@@ -119,10 +119,10 @@ def main():
     with open('../data/vector-store/nq-naive-poisoned-documents-embeddings.pkl', 'wb') as f:
         pickle.dump(napo_document_embeddings_dict, f)
     
-    # Embed adversarially poisoned documents
-    print("Embedding adversarially poisoned ('adpo') documents...")
+    # Embed poisonedrag poisoned documents
+    print("Embedding poisonedrag poisoned ('adpo') documents...")
     adpo_documents: dict[str, dict[str, str]] = {}
-    with open('../data/experiment-datasets/nq-adversarial-poisoning/corpus.jsonl', 'r') as f:
+    with open('../data/experiment-datasets/nq-poisonedrag-poisoning/corpus.jsonl', 'r') as f:
         for line in f.readlines():
             line_dict = json.loads(line)
             if line_dict['_id'].startswith('doc'):
@@ -136,5 +136,5 @@ def main():
     adpo_document_embeddings_batched = embed_text_batch.map(adpo_document_texts_batched)
     adpo_document_embeddings = [embedding for batch in adpo_document_embeddings_batched for embedding in batch]
     adpo_document_embeddings_dict = dict(zip(list(adpo_documents.keys()), adpo_document_embeddings))
-    with open('../data/vector-store/nq-adversarial-poisoned-documents-embeddings.pkl', 'wb') as f:
+    with open('../data/vector-store/nq-poisonedrag-poisoned-documents-embeddings.pkl', 'wb') as f:
         pickle.dump(adpo_document_embeddings_dict, f)

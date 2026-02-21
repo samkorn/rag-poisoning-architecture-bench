@@ -6,8 +6,8 @@ print("Copying datasets to experiment-datasets...")
 # copy nq datasets to experiment-datasets, but for naive poisoning
 os.system('cp -r original-datasets/nq experiment-datasets/nq-naive-poisoning')
 
-# copy nq datasets to experiment-datasets, but for adversarial poisoning
-os.system('cp -r original-datasets/nq experiment-datasets/nq-adversarial-poisoning')
+# copy nq datasets to experiment-datasets, but for poisonedrag poisoning
+os.system('cp -r original-datasets/nq experiment-datasets/nq-poisonedrag-poisoning')
 
 
 # Parse datasets
@@ -57,7 +57,7 @@ for query_id in query_id_to_document_ids_map.keys():
 
 # Create poisoned datasets
 print("Creating poisoned datasets...")
-naive_poisoned_lines, adversarial_poisoned_lines = [], []
+naive_poisoned_lines, poisonedrag_poisoned_lines = [], []
 for query_id in poisoned_docs.keys():
     title = distinct_titles_per_query[query_id]
     # naive poisoning
@@ -70,25 +70,25 @@ for query_id in poisoned_docs.keys():
         'metadata': {}
     }
     naive_poisoned_lines.append(naive_poisoned_line)
-    # adversarial poisoning
-    new_document_id = f'poisoned-adversarial-q:{query_id}'
+    # poisonedrag poisoning
+    new_document_id = f'poisoned-poisonedrag-q:{query_id}'
     query_text = queries[query_id]
-    adversarial_poisoned_doc = f"{query_text[0].upper()}{query_text[1:]}? {poisoned_docs[query_id]}"
-    adversarial_poisoned_line = {
+    poisonedrag_poisoned_doc = f"{query_text[0].upper()}{query_text[1:]}? {poisoned_docs[query_id]}"
+    poisonedrag_poisoned_line = {
         '_id': new_document_id,
         'title': title,
-        'text': adversarial_poisoned_doc,
+        'text': poisonedrag_poisoned_doc,
         'metadata': {}
     }
-    adversarial_poisoned_lines.append(adversarial_poisoned_line)
+    poisonedrag_poisoned_lines.append(poisonedrag_poisoned_line)
 
 # Write poisoned datasets
 print("Writing poisoned datasets...")
 with open('experiment-datasets/nq-naive-poisoning/corpus.jsonl', 'a') as f:
     for line in naive_poisoned_lines:
         f.write(json.dumps(line) + '\n')
-with open('experiment-datasets/nq-adversarial-poisoning/corpus.jsonl', 'a') as f:
-    for line in adversarial_poisoned_lines:
+with open('experiment-datasets/nq-poisonedrag-poisoning/corpus.jsonl', 'a') as f:
+    for line in poisonedrag_poisoned_lines:
         f.write(json.dumps(line) + '\n')
 
-print("Poisoned datasets written to experiment-datasets/nq-naive-poisoning/corpus.jsonl and experiment-datasets/nq-adversarial-poisoning/corpus.jsonl")
+print("Poisoned datasets written to experiment-datasets/nq-naive-poisoning/corpus.jsonl and experiment-datasets/nq-poisonedrag-poisoning/corpus.jsonl")
