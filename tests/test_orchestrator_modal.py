@@ -10,8 +10,8 @@ RLM is expected to fail until the Modal image installs it correctly.
 Prerequisite:
     modal run experiments/upload_data.py
 
-Run from workspace/:
-    modal run experiments/test_orchestrator_modal.py::app.smoke_test
+Run from repo root:
+    modal run tests/test_orchestrator_modal.py::app.smoke_test
 """
 
 import json

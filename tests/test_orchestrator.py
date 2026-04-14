@@ -6,8 +6,8 @@ Tests the pure-Python helpers that don't require Modal infrastructure:
   - is_experiment_complete() — file-count based completion detection
   - ExperimentConfig round-trip through to_dict() (worker serialization contract)
 
-Run from workspace/:
-    python experiments/test_orchestrator.py
+Run from repo root:
+    python tests/test_orchestrator.py
 """
 
 import json

@@ -6,17 +6,17 @@ across up to 99 containers.
 
 Usage (from root directory):
     # Full run (1,150 questions, writes to Modal Volume, downloads locally)
-    modal run --detach workspace/experiments/run_noise_modal.py
+    modal run --detach src/experiments/run_noise_modal.py
 
     # Dry run (no API calls, just show what would be done)
-    modal run workspace/experiments/run_noise_modal.py --dry-run
+    modal run src/experiments/run_noise_modal.py --dry-run
 
     # Download results + report only (no new classification)
-    python workspace/experiments/run_noise_modal.py --report-only
+    python src/experiments/run_noise_modal.py --report-only
 
     # Override model / disable web search
-    modal run --detach workspace/experiments/run_noise_modal.py --model gpt-5-nano
-    modal run --detach workspace/experiments/run_noise_modal.py --no-web-search
+    modal run --detach src/experiments/run_noise_modal.py --model gpt-5-nano
+    modal run --detach src/experiments/run_noise_modal.py --no-web-search
 """
 
 import json

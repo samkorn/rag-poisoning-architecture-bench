@@ -12,8 +12,7 @@ Output (written to experiment-datasets/):
     nq-questions.jsonl  — {query_id, question, correct_answer, target_answer} per line
 
 Usage:
-    cd workspace/data
-    python create_questions.py
+    python src/data/create_questions.py
 """
 
 import json

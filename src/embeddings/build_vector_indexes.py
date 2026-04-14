@@ -2,7 +2,7 @@
 Build 3 FAISS indexes (original, naive-poisoned, corruptrag-ak-poisoned) from
 pre-computed Contriever embeddings.
 
-Indexes are saved to workspace/data/vector-store/ as:
+Indexes are saved to src/data/vector-store/ as:
   - nq-original.faiss                + nq-original-doc-ids.pkl
   - nq-naive-poisoned.faiss          + nq-naive-poisoned-doc-ids.pkl
   - nq-corruptrag-ak-poisoned.faiss  + nq-corruptrag-ak-poisoned-doc-ids.pkl

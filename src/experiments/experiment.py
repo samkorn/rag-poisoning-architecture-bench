@@ -13,11 +13,8 @@ Defines:
 This module is pure Python (no Modal dependency). It is imported by the
 orchestrator's Modal worker function.
 
-Path requirement: both workspace/ AND workspace/architectures/ must be on
-sys.path so that (a) `from architectures.X import Y` and `from embeddings.X
-import Y` work, and (b) the architecture files' own internal imports like
-`from qa_system import QASystem` and `from utils import execute_llm_call`
-resolve correctly.
+Imports use package-qualified paths (``from src.architectures.X import Y``),
+resolved via the editable install (``pip install -e .``).
 """
 
 import json
