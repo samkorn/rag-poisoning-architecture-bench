@@ -18,7 +18,7 @@ _CORPUS_PATHS: dict[str, str] = {
 _title_to_doc_ids_by_corpus_type: dict[str, dict[str, set[str]]] = {}
 
 # Candidate paths for noise filter results (checked in order).
-# Local: workspace/experiments/results/noise/
+# Local: src/experiments/results/noise/
 # Modal volume: /vol/results/noise/
 _NOISE_RESULTS_PATHS = [
     os.path.join(_DATA_BASE, '..', 'experiments', 'results', 'noise'),

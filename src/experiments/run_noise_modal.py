@@ -6,17 +6,17 @@ across up to 99 containers.
 
 Usage (from root directory):
     # Full run (1,150 questions, writes to Modal Volume, downloads locally)
-    modal run --detach workspace/experiments/run_noise_modal.py
+    modal run --detach src/experiments/run_noise_modal.py
 
     # Dry run (no API calls, just show what would be done)
-    modal run workspace/experiments/run_noise_modal.py --dry-run
+    modal run src/experiments/run_noise_modal.py --dry-run
 
     # Download results + report only (no new classification)
-    python workspace/experiments/run_noise_modal.py --report-only
+    python src/experiments/run_noise_modal.py --report-only
 
     # Override model / disable web search
-    modal run --detach workspace/experiments/run_noise_modal.py --model gpt-5-nano
-    modal run --detach workspace/experiments/run_noise_modal.py --no-web-search
+    modal run --detach src/experiments/run_noise_modal.py --model gpt-5-nano
+    modal run --detach src/experiments/run_noise_modal.py --no-web-search
 """
 
 import json
@@ -41,10 +41,12 @@ image = (
         'python-dotenv',
     )
     # Mount only the noise filter module + dependencies.
-    # Paths are relative to CWD (project root), not this file.
+    # Paths are relative to CWD (repo root), not this file.
+    .add_local_file('src/__init__.py', remote_path='/app/src/__init__.py')
+    .add_local_file('src/experiments/__init__.py', remote_path='/app/src/experiments/__init__.py')
     .add_local_file(
-        'workspace/experiments/noise_filter.py',
-        remote_path='/app/experiments/noise_filter.py',
+        'src/experiments/noise_filter.py',
+        remote_path='/app/src/experiments/noise_filter.py',
     )
 )
 
@@ -76,9 +78,11 @@ def classify_noise(
     web_search: bool = True,
 ) -> dict:
     """Classify a single question as NOISE or not. One unit of starmap work."""
-    sys.path.insert(0, '/app')
+    import sys
+    if '/app' not in sys.path:
+        sys.path.insert(0, '/app')
 
-    from experiments.noise_filter import check_noise
+    from src.experiments.noise_filter import check_noise
 
     qid = question_dict['query_id']
     result = {
@@ -306,13 +310,11 @@ def main(
         local_dir = download_results()
 
         # Print report.
-        _workspace_root = os.path.normpath(os.path.join(_EXPERIMENTS_DIR, '..'))
-        if _workspace_root not in sys.path:
-            sys.path.insert(0, _workspace_root)
-        if os.path.join(_workspace_root, 'architectures') not in sys.path:
-            sys.path.insert(0, os.path.join(_workspace_root, 'architectures'))
+        _repo_root = os.path.normpath(os.path.join(_EXPERIMENTS_DIR, '..', '..'))
+        if _repo_root not in sys.path:
+            sys.path.insert(0, _repo_root)
 
-        from experiments.noise_filter import print_report
+        from src.experiments.noise_filter import print_report
         print_report(local_dir)
 
 
@@ -323,11 +325,9 @@ def main(
 if __name__ == '__main__':
     import argparse
 
-    _workspace_root = os.path.normpath(os.path.join(_EXPERIMENTS_DIR, '..'))
-    if _workspace_root not in sys.path:
-        sys.path.insert(0, _workspace_root)
-    if os.path.join(_workspace_root, 'architectures') not in sys.path:
-        sys.path.insert(0, os.path.join(_workspace_root, 'architectures'))
+    _repo_root = os.path.normpath(os.path.join(_EXPERIMENTS_DIR, '..', '..'))
+    if _repo_root not in sys.path:
+        sys.path.insert(0, _repo_root)
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--report-only', action='store_true',
@@ -343,9 +343,9 @@ if __name__ == '__main__':
     if args.report_only:
         print("Downloading noise results from Modal Volume...")
         local_dir = download_results()
-        from experiments.noise_filter import print_report
+        from src.experiments.noise_filter import print_report
         print_report(local_dir)
     else:
         print("Direct invocation only supports --report-only.")
-        print("For full runs, use: modal run experiments/run_noise_modal.py")
+        print("For full runs, use: modal run src/experiments/run_noise_modal.py")
         raise SystemExit(1)

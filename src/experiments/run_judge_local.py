@@ -19,25 +19,14 @@ import argparse
 import csv
 import json
 import os
-import sys
 import time
 from collections import Counter, defaultdict
 from typing import Optional
 
 from tqdm import tqdm
-
-# Path setup (same as llm_judge.py)
-_WORKSPACE_ROOT = os.path.normpath(
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
-)
-_ARCHITECTURES_DIR = os.path.join(_WORKSPACE_ROOT, 'architectures')
-for _p in (_WORKSPACE_ROOT, _ARCHITECTURES_DIR):
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
-
 from openai import OpenAI
 
-from experiments.llm_judge import (
+from src.experiments.llm_judge import (
     ALL_EXPERIMENTS,
     Classification,
     DEFAULT_REASONING_EFFORT,
@@ -54,7 +43,7 @@ from experiments.llm_judge import (
 
 REVIEW_CSV = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
-    '..', 'analysis', 'human_labels.csv',
+    '..', '..', 'analysis', 'human_labels.csv',
 )
 
 DEFAULT_OUTPUT_DIR = os.path.join(
@@ -254,7 +243,7 @@ def load_cached_results(
     the review data so the agreement report works without re-judging.
     Excludes NOISE questions.
     """
-    from data.utils import NOISE_QUESTION_IDS
+    from src.data.utils import NOISE_QUESTION_IDS
 
     # Build lookup for human labels.
     human_lookup = {}
@@ -297,7 +286,7 @@ def build_agreement_report(judge_results: list[dict], review_data: list[dict]) -
     """
     import numpy as np
 
-    from data.utils import NOISE_QUESTION_IDS
+    from src.data.utils import NOISE_QUESTION_IDS
 
     lines: list[str] = []
     w = lines.append  # shorthand

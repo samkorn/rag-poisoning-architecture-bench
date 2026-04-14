@@ -10,9 +10,8 @@ Uploads:
     data/experiment-datasets/    → /vol/experiment-datasets/
 
 Prerequisites:
-    cd workspace/data
-    python create_questions.py          # builds experiment-datasets/nq-questions.jsonl
-    python filter_gold_questions.py     # builds experiment-datasets/nq-questions-gold-filtered.jsonl
+    python src/data/create_questions.py          # builds experiment-datasets/nq-questions.jsonl
+    python src/data/filter_gold_questions.py     # builds experiment-datasets/nq-questions-gold-filtered.jsonl
 
 Usage:
     python experiments/upload_data.py
@@ -32,25 +31,25 @@ import time
 VOLUME_NAME = 'rag-poisoning-data'
 
 # ---------------------------------------------------------------------------
-# Local paths (relative to workspace/)
+# Local paths (relative to src/)
 # ---------------------------------------------------------------------------
 
-_WORKSPACE = os.path.normpath(
+_SRC_ROOT = os.path.normpath(
     os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 )
 
 _UPLOAD_DIRS: list[tuple[str, str]] = [
     # (local_dir, remote_dir_on_volume)
     (
-        os.path.join(_WORKSPACE, 'data', 'vector-store'),
+        os.path.join(_SRC_ROOT, 'data', 'vector-store'),
         'vector-store',
     ),
     (
-        os.path.join(_WORKSPACE, 'data', 'original-datasets', 'nq'),
+        os.path.join(_SRC_ROOT, 'data', 'original-datasets', 'nq'),
         'original-datasets/nq',
     ),
     (
-        os.path.join(_WORKSPACE, 'data', 'experiment-datasets'),
+        os.path.join(_SRC_ROOT, 'data', 'experiment-datasets'),
         'experiment-datasets',
     ),
 ]
@@ -149,19 +148,19 @@ def main():
 
     # --- Preflight: check that required question files have been built --------
     qjsonl_path = os.path.join(
-        _WORKSPACE, 'data', 'experiment-datasets', 'nq-questions.jsonl'
+        _SRC_ROOT, 'data', 'experiment-datasets', 'nq-questions.jsonl'
     )
     if not os.path.exists(qjsonl_path):
         print("ERROR: nq-questions.jsonl not found. Run the data prep step first:")
-        print("  cd workspace/data && python create_questions.py")
+        print("  python src/data/create_questions.py")
         raise SystemExit(1)
 
     gold_filtered_path = os.path.join(
-        _WORKSPACE, 'data', 'experiment-datasets', 'nq-questions-gold-filtered.jsonl'
+        _SRC_ROOT, 'data', 'experiment-datasets', 'nq-questions-gold-filtered.jsonl'
     )
     if not os.path.exists(gold_filtered_path):
         print("ERROR: nq-questions-gold-filtered.jsonl not found. Run:")
-        print("  cd workspace/data && python filter_gold_questions.py")
+        print("  python src/data/filter_gold_questions.py")
         raise SystemExit(1)
 
     print("Preflight OK: nq-questions.jsonl and nq-questions-gold-filtered.jsonl found")

@@ -10,8 +10,7 @@ Output:
     experiment-datasets/nq-questions-gold-filtered.jsonl
 
 Usage:
-    cd workspace/data
-    python filter_gold_questions.py
+    python src/data/filter_gold_questions.py
 """
 
 import json

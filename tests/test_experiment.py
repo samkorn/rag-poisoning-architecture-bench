@@ -4,26 +4,20 @@ Quick smoke test for experiment.py.
 Tests run_single_question() and run_question_batch() with 2-3 real NQ
 questions against vanilla RAG (fastest architecture).
 
-Run from workspace/:
-    python experiments/test_experiment.py
+Run from repo root:
+    python tests/test_experiment.py
 """
 
 import json
 import os
-import sys
 import shutil
 import tempfile
 
-# Path setup (same as experiment.py)
-_WORKSPACE_ROOT = os.path.normpath(
+_REPO_ROOT = os.path.normpath(
     os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 )
-_ARCHITECTURES_DIR = os.path.join(_WORKSPACE_ROOT, 'architectures')
-for _p in (_WORKSPACE_ROOT, _ARCHITECTURES_DIR):
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
 
-from experiments.experiment import (
+from src.experiments.experiment import (
     ExperimentConfig,
     QuestionResult,
     RetrievalCapture,
@@ -44,10 +38,10 @@ from experiments.experiment import (
 def load_test_questions(query_ids: list[str]) -> dict[str, dict]:
     """Load question dicts from data/experiment-datasets/nq-questions.jsonl.
 
-    Prerequisite: ``cd workspace/data && python create_questions.py``
+    Prerequisite: ``python src/data/create_questions.py``
     """
     questions_path = os.path.join(
-        _WORKSPACE_ROOT, 'data', 'experiment-datasets', 'nq-questions.jsonl'
+        _REPO_ROOT, 'src', 'data', 'experiment-datasets', 'nq-questions.jsonl'
     )
     query_id_set = set(query_ids)
     questions: dict[str, dict] = {}

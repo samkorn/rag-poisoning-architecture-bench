@@ -1,14 +1,12 @@
 import re
-import sys
 import os
 import time
 
 from rlm import RLM as RLMClass
 
-from qa_system import QASystem, STANDARD_PROMPT
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from embeddings.vector_store import VectorStore
-from data.utils import (
+from src.architectures.qa_system import QASystem, STANDARD_PROMPT
+from src.embeddings.vector_store import VectorStore
+from src.data.utils import (
     get_query_id_from_question,
     load_title_to_doc_ids_map,
 )

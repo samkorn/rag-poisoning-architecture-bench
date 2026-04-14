@@ -1,5 +1,4 @@
 import modal
-import sys
 import os
 import time
 from typing import Optional
@@ -8,9 +7,8 @@ from dataclasses import dataclass
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.models.openai import OpenAIResponsesModel, OpenAIResponsesModelSettings
 
-from qa_system import QASystem
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from embeddings.vector_store import VectorStore
+from src.architectures.qa_system import QASystem
+from src.embeddings.vector_store import VectorStore
 
 
 # logfire configuration, run only if not in a Modal container

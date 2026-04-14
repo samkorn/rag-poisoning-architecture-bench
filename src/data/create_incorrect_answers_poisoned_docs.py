@@ -2,6 +2,8 @@ import os
 import modal
 import json
 
+_DATA_DIR = os.path.dirname(os.path.abspath(__file__))
+
 
 # Globals and constants
 app = modal.App(image=modal.Image.debian_slim().pip_install('openai'))
@@ -54,19 +56,19 @@ def main():
     # Parse original dataset
     print("Parsing NQ dataset...")
     queries: dict[str, str] = {}
-    with open('original-datasets/nq/queries.jsonl', 'r') as f:
+    with open(os.path.join(_DATA_DIR, 'original-datasets', 'nq', 'queries.jsonl'), 'r') as f:
         for line in f.readlines():
             line_dict = json.loads(line)
             queries[line_dict['_id']] = line_dict['text']
 
     documents: dict[str, dict[str, str]] = {}
-    with open('original-datasets/nq/corpus.jsonl', 'r') as f:
+    with open(os.path.join(_DATA_DIR, 'original-datasets', 'nq', 'corpus.jsonl'), 'r') as f:
         for line in f.readlines():
             line_dict = json.loads(line)
             documents[line_dict['_id']] = {'title': line_dict['title'], 'text': line_dict['text']}
     
     query_id_to_document_ids_map: dict[str, set[str]] = {}
-    with open('original-datasets/nq/qrels/test.tsv', 'r') as f:
+    with open(os.path.join(_DATA_DIR, 'original-datasets', 'nq', 'qrels', 'test.tsv'), 'r') as f:
         for i, line in enumerate(f.readlines()):
             if i == 0:
                 continue
@@ -77,7 +79,7 @@ def main():
                 query_id_to_document_ids_map[query_id].add(document_id)
     
     correct_answers: dict[str, str] = {}
-    with open('experiment-datasets/nq-correct-answers.jsonl', 'r') as f:
+    with open(os.path.join(_DATA_DIR, 'experiment-datasets', 'nq-correct-answers.jsonl'), 'r') as f:
         for line in f.readlines():
             line_dict = json.loads(line)
             correct_answers[line_dict['query_id']] = line_dict['correct_answer']
@@ -95,8 +97,8 @@ def main():
     # Craft correct answers
     print("Crafting incorrect answers and poisoned docs...")
     incorrect_answers_dicts = list(craft_incorrect_answer.starmap(question_correct_answers_documents_tuples))
-    os.makedirs('experiment-datasets', exist_ok=True)
-    with open('experiment-datasets/nq-incorrect-answers-poisoned-docs.jsonl', 'w') as f:
+    os.makedirs(os.path.join(_DATA_DIR, 'experiment-datasets'), exist_ok=True)
+    with open(os.path.join(_DATA_DIR, 'experiment-datasets', 'nq-incorrect-answers-poisoned-docs.jsonl'), 'w') as f:
         for query_id, incorrect_answer_dict in zip(queries.keys(), incorrect_answers_dicts):
             f.write(json.dumps({'query_id': query_id, **incorrect_answer_dict}) + '\n')
     print("Incorrect answers saved to experiment-datasets/nq-incorrect-answers-poisoned-docs.jsonl")

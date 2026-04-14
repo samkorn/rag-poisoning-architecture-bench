@@ -3,6 +3,8 @@ import json
 
 import modal
 
+_DATA_DIR = os.path.dirname(os.path.abspath(__file__))
+
 
 # Globals and constants
 app = modal.App(image=modal.Image.debian_slim().pip_install('openai'))
@@ -63,7 +65,7 @@ def main():
     # Load queries
     print("Loading queries...")
     queries: dict[str, str] = {}
-    with open('original-datasets/nq/queries.jsonl', 'r') as f:
+    with open(os.path.join(_DATA_DIR, 'original-datasets', 'nq', 'queries.jsonl'), 'r') as f:
         for line in f.readlines():
             line_dict = json.loads(line)
             queries[line_dict['_id']] = line_dict['text']
@@ -71,7 +73,7 @@ def main():
     # Load correct answers
     print("Loading correct answers...")
     correct_answers: dict[str, str] = {}
-    with open('experiment-datasets/nq-correct-answers.jsonl', 'r') as f:
+    with open(os.path.join(_DATA_DIR, 'experiment-datasets', 'nq-correct-answers.jsonl'), 'r') as f:
         for line in f.readlines():
             line_dict = json.loads(line)
             correct_answers[line_dict['query_id']] = line_dict['correct_answer']
@@ -79,7 +81,7 @@ def main():
     # Load target (incorrect) answers
     print("Loading target answers...")
     target_answers: dict[str, str] = {}
-    with open('experiment-datasets/nq-incorrect-answers-poisoned-docs.jsonl', 'r') as f:
+    with open(os.path.join(_DATA_DIR, 'experiment-datasets', 'nq-incorrect-answers-poisoned-docs.jsonl'), 'r') as f:
         for line in f.readlines():
             line_dict = json.loads(line)
             target_answers[line_dict['query_id']] = line_dict['incorrect_answer']
@@ -100,8 +102,8 @@ def main():
     results = list(refine_adversarial_string.starmap(starmap_args))
 
     # Write output
-    os.makedirs('experiment-datasets', exist_ok=True)
-    output_path = 'experiment-datasets/nq-corruptrag-ak-poisoned-docs.jsonl'
+    os.makedirs(os.path.join(_DATA_DIR, 'experiment-datasets'), exist_ok=True)
+    output_path = os.path.join(_DATA_DIR, 'experiment-datasets', 'nq-corruptrag-ak-poisoned-docs.jsonl')
     with open(output_path, 'w') as f:
         for result in results:
             f.write(json.dumps(result) + '\n')

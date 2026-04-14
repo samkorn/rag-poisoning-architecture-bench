@@ -52,13 +52,15 @@ image = (
     )
     # Mount only the files workers/orchestrator actually import.
     # Experiment results are read from the Modal Volume, not the image.
-    .add_local_file('experiments/__init__.py', remote_path='/app/experiments/__init__.py')
-    .add_local_file('experiments/llm_judge.py', remote_path='/app/experiments/llm_judge.py')
-    .add_local_file('experiments/llm-judge-prompt.md', remote_path='/app/experiments/llm-judge-prompt.md')
-    .add_local_file('architectures/utils.py', remote_path='/app/architectures/utils.py')
-    .add_local_file('architectures/qa_system.py', remote_path='/app/architectures/qa_system.py')
-    .add_local_file('data/__init__.py', remote_path='/app/data/__init__.py')
-    .add_local_file('data/utils.py', remote_path='/app/data/utils.py')
+    .add_local_file('src/__init__.py', remote_path='/app/src/__init__.py')
+    .add_local_file('src/experiments/__init__.py', remote_path='/app/src/experiments/__init__.py')
+    .add_local_file('src/experiments/llm_judge.py', remote_path='/app/src/experiments/llm_judge.py')
+    .add_local_file('src/experiments/llm-judge-prompt.md', remote_path='/app/src/experiments/llm-judge-prompt.md')
+    .add_local_file('src/architectures/__init__.py', remote_path='/app/src/architectures/__init__.py')
+    .add_local_file('src/architectures/utils.py', remote_path='/app/src/architectures/utils.py')
+    .add_local_file('src/architectures/qa_system.py', remote_path='/app/src/architectures/qa_system.py')
+    .add_local_file('src/data/__init__.py', remote_path='/app/src/data/__init__.py')
+    .add_local_file('src/data/utils.py', remote_path='/app/src/data/utils.py')
 )
 
 volume = modal.Volume.from_name('rag-poisoning-data', create_if_missing=True)
@@ -106,7 +108,7 @@ REASONING_MULTIPLIER = {
 _EXPERIMENTS_DIR = os.path.dirname(os.path.abspath(__file__))
 REVIEW_CSV = os.path.join(
     _EXPERIMENTS_DIR,
-    '..', 'analysis', 'human_labels.csv',
+    '..', '..', 'analysis', 'human_labels.csv',
 )
 
 
@@ -135,10 +137,8 @@ def judge_single_result(
     import sys
     if '/app' not in sys.path:
         sys.path.insert(0, '/app')
-    if '/app/architectures' not in sys.path:
-        sys.path.insert(0, '/app/architectures')
 
-    from experiments.llm_judge import evaluate_response
+    from src.experiments.llm_judge import evaluate_response
     from openai import OpenAI
 
     openai_client = OpenAI()
@@ -193,10 +193,8 @@ def judge_single_result_from_volume(
     import sys
     if '/app' not in sys.path:
         sys.path.insert(0, '/app')
-    if '/app/architectures' not in sys.path:
-        sys.path.insert(0, '/app/architectures')
 
-    from experiments.llm_judge import evaluate_response
+    from src.experiments.llm_judge import evaluate_response
     from openai import OpenAI
 
     openai_client = OpenAI()
@@ -466,13 +464,11 @@ def run_judge_orchestrator(
     import sys
     if '/app' not in sys.path:
         sys.path.insert(0, '/app')
-    if '/app/architectures' not in sys.path:
-        sys.path.insert(0, '/app/architectures')
 
     volume.reload()
 
     if dry_run:
-        from data.utils import NOISE_QUESTION_IDS
+        from src.data.utils import NOISE_QUESTION_IDS
         counts = count_result_files()
         already_judged = get_already_judged()
         # Subtract already-judged and NOISE from per-experiment counts for estimate.
@@ -494,8 +490,8 @@ def run_judge_orchestrator(
         print_cost_estimate(adjusted, model, reasoning_effort)
         return
 
-    from data.utils import NOISE_QUESTION_IDS
-    from experiments.llm_judge import load_judge_prompt
+    from src.data.utils import NOISE_QUESTION_IDS
+    from src.experiments.llm_judge import load_judge_prompt
 
     print("Listing experiment result IDs from volume...")
     all_ids = list_result_ids()
@@ -564,11 +560,9 @@ def run_validation_orchestrator(
     import sys
     if '/app' not in sys.path:
         sys.path.insert(0, '/app')
-    if '/app/architectures' not in sys.path:
-        sys.path.insert(0, '/app/architectures')
 
-    from data.utils import NOISE_QUESTION_IDS
-    from experiments.llm_judge import load_judge_prompt
+    from src.data.utils import NOISE_QUESTION_IDS
+    from src.experiments.llm_judge import load_judge_prompt
 
     volume.reload()
 
@@ -647,7 +641,7 @@ def _load_local_judge_results(
     review_data: list[dict],
 ) -> tuple[list[dict], str]:
     """Load judge results from local files, excluding NOISE questions."""
-    from data.utils import NOISE_QUESTION_IDS
+    from src.data.utils import NOISE_QUESTION_IDS
 
     human_lookup = {}
     for row in review_data:
@@ -810,7 +804,7 @@ def _generate_validation_report(
     output_dir: str,
 ):
     """Generate and save the validation agreement report locally."""
-    from run_judge_local import build_agreement_report
+    from src.experiments.run_judge_local import build_agreement_report
 
     report = build_agreement_report(judge_results, review_data)
     print(report)
@@ -858,7 +852,7 @@ def main(
             return
 
         # Filter NOISE questions before sending to Modal.
-        from data.utils import NOISE_QUESTION_IDS
+        from src.data.utils import NOISE_QUESTION_IDS
         pre_filter = len(review_data)
         review_data = [r for r in review_data if r['question_id'] not in NOISE_QUESTION_IDS]
         n_filtered = pre_filter - len(review_data)
@@ -898,10 +892,10 @@ if __name__ == '__main__':
     import argparse
     import sys as _sys
 
-    # Ensure workspace root is on sys.path so `from data.utils import ...` works.
-    _workspace_root = os.path.normpath(os.path.join(_EXPERIMENTS_DIR, '..'))
-    if _workspace_root not in _sys.path:
-        _sys.path.insert(0, _workspace_root)
+    # Ensure repo root is on sys.path so `from src.X.Y import Z` works.
+    _repo_root = os.path.normpath(os.path.join(_EXPERIMENTS_DIR, '..', '..'))
+    if _repo_root not in _sys.path:
+        _sys.path.insert(0, _repo_root)
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', default='gpt-5-mini')

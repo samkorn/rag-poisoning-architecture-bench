@@ -24,7 +24,6 @@ import argparse
 import json
 import os
 import string
-import sys
 from enum import Enum
 from typing import Optional
 
@@ -35,21 +34,7 @@ from openai import OpenAI
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv; load_dotenv()
 
-
-# ---------------------------------------------------------------------------
-# Path setup — workspace/ and workspace/architectures/ on sys.path
-# ---------------------------------------------------------------------------
-
-_WORKSPACE_ROOT = os.path.normpath(
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
-)
-_ARCHITECTURES_DIR = os.path.join(_WORKSPACE_ROOT, 'architectures')
-
-for _p in (_WORKSPACE_ROOT, _ARCHITECTURES_DIR):
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
-
-from utils import execute_llm_call
+from src.architectures.utils import execute_llm_call
 
 
 # ---------------------------------------------------------------------------
