@@ -84,14 +84,15 @@ image = (
         "AutoModel.from_pretrained('facebook/contriever')"
         "\""
     )
-    # Mount project Python code into /app/ (mirrors workspace/ layout).
-    .add_local_dir('architectures/', remote_path='/app/architectures/')
-    .add_local_dir('embeddings/', remote_path='/app/embeddings/')
-    .add_local_dir('experiments/', remote_path='/app/experiments/')
-    # data/ — only the Python module, NOT the multi-GB data files.
+    # Mount project Python code into /app/src/ so `from src.X.Y import Z` works.
+    .add_local_file('src/__init__.py', remote_path='/app/src/__init__.py')
+    .add_local_dir('src/architectures/', remote_path='/app/src/architectures/')
+    .add_local_dir('src/embeddings/', remote_path='/app/src/embeddings/')
+    .add_local_dir('src/experiments/', remote_path='/app/src/experiments/')
+    # data/ — Python modules only, NOT the multi-GB data files.
     # The heavy data subdirectories (vector-store/, original-datasets/, etc.)
     # are symlinked from the Volume at container startup (see setup_container).
-    .add_local_file('data/utils.py', remote_path='/app/data/utils.py')
+    .add_local_dir('src/data/', remote_path='/app/src/data/')
 )
 
 # --- Volume ---------------------------------------------------------------
@@ -120,35 +121,29 @@ def setup_container():
 
     Called at the top of every worker / orchestrator function.
 
-    VectorStore (in /app/embeddings/vector_store.py) resolves data paths
+    VectorStore (in /app/src/embeddings/vector_store.py) resolves data paths
     relative to its own __file__:
-        VECTOR_STORE_DIR = <__file__>/../../data/vector-store  ->  /app/data/vector-store
-        _DATA_BASE       = <__file__>/../../data               ->  /app/data
+        VECTOR_STORE_DIR = <__file__>/../../data/vector-store  ->  /app/src/data/vector-store
+        _DATA_BASE       = <__file__>/../../data               ->  /app/src/data
 
     data/utils.py resolves paths from its own __file__:
-        _DATA_BASE = os.path.dirname(__file__)                 ->  /app/data
+        _DATA_BASE = os.path.dirname(__file__)                 ->  /app/src/data
 
-    So we symlink the Volume's data subdirectories into /app/data/ where
-    the code expects them.  The Python module /app/data/utils.py (baked
-    into the image) coexists with these symlinks in the same directory.
+    So we symlink the Volume's data subdirectories into /app/src/data/ where
+    the code expects them.  The Python modules (baked into the image) coexist
+    with these symlinks in the same directory.
     """
     import sys
 
-    # workspace/ equivalent
     if '/app' not in sys.path:
         sys.path.insert(0, '/app')
-    # architectures/ — needed for `from qa_system import QASystem` etc.
-    # inside the architecture files (they use implicit top-level imports)
-    if '/app/architectures' not in sys.path:
-        sys.path.insert(0, '/app/architectures')
 
-    # Symlink heavy data directories from Volume into /app/data/
+    # Symlink heavy data directories from Volume into /app/src/data/
     symlinks = {
-        '/app/data/vector-store': f'{VOLUME_MOUNT}/vector-store',
-        '/app/data/original-datasets': f'{VOLUME_MOUNT}/original-datasets',
-        '/app/data/experiment-datasets': f'{VOLUME_MOUNT}/experiment-datasets',
+        '/app/src/data/vector-store': f'{VOLUME_MOUNT}/vector-store',
+        '/app/src/data/original-datasets': f'{VOLUME_MOUNT}/original-datasets',
+        '/app/src/data/experiment-datasets': f'{VOLUME_MOUNT}/experiment-datasets',
     }
-    os.makedirs('/app/data', exist_ok=True)
     for link, target in symlinks.items():
         if os.path.exists(target) and not os.path.exists(link):
             os.symlink(target, link)
@@ -168,7 +163,7 @@ def build_experiment_matrix() -> list:
       Phase 3 — RLM           (3 exp)
       Phase 4 — MADAM-RAG     (3 exp)
     """
-    from experiments.experiment import ExperimentConfig
+    from src.experiments.experiment import ExperimentConfig
 
     experiments: list[ExperimentConfig] = []
     attack_types = ['clean', 'naive', 'corruptrag_ak']
@@ -267,7 +262,7 @@ def run_worker(config_dict: dict, question_ids: list[str]) -> dict:
     """
     setup_container()
 
-    from experiments.experiment import ExperimentConfig, run_question_batch
+    from src.experiments.experiment import ExperimentConfig, run_question_batch
 
     # Reconstruct ExperimentConfig from dict (drop derived 'corpus_type' key).
     cfg_kwargs = {k: v for k, v in config_dict.items() if k != 'corpus_type'}
@@ -311,7 +306,7 @@ def run_orchestrator():
     """
     setup_container()
 
-    from experiments.experiment import split_questions
+    from src.experiments.experiment import split_questions
 
     # Load question IDs from nq-questions.jsonl on the Volume.
     questions_path = os.path.join(VOLUME_MOUNT, 'experiment-datasets', 'nq-questions-gold-filtered.jsonl')

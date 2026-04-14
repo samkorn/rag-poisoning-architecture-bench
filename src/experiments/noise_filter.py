@@ -20,7 +20,6 @@ import argparse
 import json
 import os
 import random
-import sys
 import time
 from enum import Enum
 from typing import Literal, Optional
@@ -32,20 +31,6 @@ from dotenv import load_dotenv; load_dotenv()
 
 
 # ---------------------------------------------------------------------------
-# Path setup
-# ---------------------------------------------------------------------------
-
-_WORKSPACE_ROOT = os.path.normpath(
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
-)
-_ARCHITECTURES_DIR = os.path.join(_WORKSPACE_ROOT, 'architectures')
-
-for _p in (_WORKSPACE_ROOT, _ARCHITECTURES_DIR):
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
-
-
-# ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
@@ -53,7 +38,8 @@ DEFAULT_MODEL = 'gpt-5-mini'
 DEFAULT_REASONING_EFFORT = 'high'
 
 QUESTIONS_PATH = os.path.join(
-    _WORKSPACE_ROOT, 'data', 'experiment-datasets',
+    os.path.dirname(os.path.abspath(__file__)),
+    '..', 'data', 'experiment-datasets',
     'nq-questions-gold-filtered.jsonl',
 )
 

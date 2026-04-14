@@ -23,7 +23,6 @@ resolve correctly.
 import json
 import os
 import re
-import sys
 import time
 import traceback
 from dataclasses import dataclass, field, asdict
@@ -31,20 +30,6 @@ from typing import Optional, Literal
 
 from tenacity import retry, stop_after_attempt, wait_exponential_jitter
 from timeout_decorator import timeout
-
-
-# ---------------------------------------------------------------------------
-# Path setup — workspace/ and workspace/architectures/ on sys.path
-# ---------------------------------------------------------------------------
-
-_WORKSPACE_ROOT = os.path.normpath(
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
-)
-_ARCHITECTURES_DIR = os.path.join(_WORKSPACE_ROOT, 'architectures')
-
-for _p in (_WORKSPACE_ROOT, _ARCHITECTURES_DIR):
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
 
 
 # ---------------------------------------------------------------------------
@@ -257,7 +242,7 @@ def create_qa_system(config: ExperimentConfig):
         common_kwargs['reasoning_effort'] = config.reasoning_effort
 
     if config.architecture == 'vanilla':
-        from architectures.vanilla_rag import VanillaRAG
+        from src.architectures.vanilla_rag import VanillaRAG
         return VanillaRAG(
             corpus_type=config.corpus_type,
             top_k=config.k,
@@ -265,7 +250,7 @@ def create_qa_system(config: ExperimentConfig):
         )
 
     elif config.architecture == 'agentic':
-        from architectures.agentic_rag import AgenticRAG
+        from src.architectures.agentic_rag import AgenticRAG
         return AgenticRAG(
             corpus_type=config.corpus_type,
             top_k=config.k,
@@ -273,7 +258,7 @@ def create_qa_system(config: ExperimentConfig):
         )
 
     elif config.architecture == 'madam':
-        from architectures.madam_rag import MadamRAG
+        from src.architectures.madam_rag import MadamRAG
         return MadamRAG(
             corpus_type=config.corpus_type,
             top_k=config.k,
@@ -286,7 +271,7 @@ def create_qa_system(config: ExperimentConfig):
         # rlm_kwargs: dict = {'model_id': config.rlm_root_model}
         # if config.reasoning_effort:
         #     rlm_kwargs['reasoning_effort'] = config.reasoning_effort
-        from architectures.recursive_lm import RLM
+        from src.architectures.recursive_lm import RLM
         return RLM(corpus_type=config.corpus_type, **common_kwargs)
 
     else:
