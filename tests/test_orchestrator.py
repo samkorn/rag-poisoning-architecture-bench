@@ -12,21 +12,11 @@ Run from workspace/:
 
 import json
 import os
-import sys
 import tempfile
 import shutil
 
-# Path setup (same as experiment.py / orchestrator.py)
-_WORKSPACE_ROOT = os.path.normpath(
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
-)
-_ARCHITECTURES_DIR = os.path.join(_WORKSPACE_ROOT, 'architectures')
-for _p in (_WORKSPACE_ROOT, _ARCHITECTURES_DIR):
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
-
-from experiments.orchestrator import build_experiment_matrix, is_experiment_complete
-from experiments.experiment import ExperimentConfig
+from src.experiments.orchestrator import build_experiment_matrix, is_experiment_complete
+from src.experiments.experiment import ExperimentConfig
 
 
 # ---------------------------------------------------------------------------
@@ -171,7 +161,7 @@ def test_is_experiment_complete():
     tmp_dir = tempfile.mkdtemp(prefix='rag_orch_test_')
 
     # Monkey-patch the RESULTS_DIR that is_experiment_complete reads from.
-    import experiments.orchestrator as orch_mod
+    import src.experiments.orchestrator as orch_mod
     orig_results_dir = orch_mod.RESULTS_DIR
     orch_mod.RESULTS_DIR = tmp_dir
 

@@ -19,22 +19,7 @@ import os
 import sys
 import time
 
-# ---------------------------------------------------------------------------
-# Path setup
-# ---------------------------------------------------------------------------
-# Locally, __file__ is inside workspace/experiments/ so we go up one level to
-# get workspace/.  Inside a Modal container the code is mounted at /app/, so
-# we add that as a fallback.
-
-_WORKSPACE_ROOT = os.path.normpath(
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
-)
-_ARCHITECTURES_DIR = os.path.join(_WORKSPACE_ROOT, 'architectures')
-for _p in (_WORKSPACE_ROOT, _ARCHITECTURES_DIR, '/app', '/app/architectures'):
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
-
-from experiments.orchestrator import (
+from src.experiments.orchestrator import (
     app,
     run_worker,
     image,
@@ -42,7 +27,7 @@ from experiments.orchestrator import (
     VOLUME_MOUNT,
     RESULTS_DIR,
 )
-from experiments.experiment import ExperimentConfig
+from src.experiments.experiment import ExperimentConfig
 
 
 # ---------------------------------------------------------------------------
