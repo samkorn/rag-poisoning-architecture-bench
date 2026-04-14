@@ -11,7 +11,6 @@ Usage:
     results = vs.retrieve("some question", top_k=5)
 """
 
-import sys
 import os
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'  # faiss-cpu and PyTorch both ship OpenMP; suppress conflict
 import json
@@ -22,9 +21,8 @@ import torch  # must be imported before faiss to avoid segfault on Apple Silicon
 import faiss
 import numpy as np
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from data.utils import get_question_from_query_id
-from embeddings import Embedder
+from src.data.utils import get_question_from_query_id
+from src.embeddings import Embedder
 
 
 # Global path variables
