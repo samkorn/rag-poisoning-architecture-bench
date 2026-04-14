@@ -19,6 +19,8 @@ Usage:
 import json
 import os
 
+_DATA_DIR = os.path.dirname(os.path.abspath(__file__))
+
 
 def load_qrels(path: str) -> dict[str, list[str]]:
     """Load qrels TSV into {query_id: [corpus_id, ...]} mapping."""
@@ -34,7 +36,7 @@ def load_qrels(path: str) -> dict[str, list[str]]:
 def main():
     # --- Load original queries ----------------------------------------------
     queries: dict[str, str] = {}
-    with open('original-datasets/nq/queries.jsonl') as f:
+    with open(os.path.join(_DATA_DIR, 'original-datasets', 'nq', 'queries.jsonl')) as f:
         for line in f:
             line_dict = json.loads(line)
             queries[line_dict['_id']] = line_dict['text']
@@ -42,7 +44,7 @@ def main():
 
     # --- Load correct answers -----------------------------------------------
     correct: dict[str, str] = {}
-    with open('experiment-datasets/nq-correct-answers.jsonl') as f:
+    with open(os.path.join(_DATA_DIR, 'experiment-datasets', 'nq-correct-answers.jsonl')) as f:
         for line in f:
             line_dict = json.loads(line)
             correct[line_dict['query_id']] = line_dict['correct_answer']
@@ -50,22 +52,22 @@ def main():
 
     # --- Load target (incorrect) answers ------------------------------------
     targets: dict[str, str] = {}
-    with open('experiment-datasets/nq-incorrect-answers-poisoned-docs.jsonl') as f:
+    with open(os.path.join(_DATA_DIR, 'experiment-datasets', 'nq-incorrect-answers-poisoned-docs.jsonl')) as f:
         for line in f:
             line_dict = json.loads(line)
             targets[line_dict['query_id']] = line_dict['incorrect_answer']
     print(f"Loaded {len(targets):,} target answers")
 
     # --- Load gold-standard relevance judgments (qrels) ---------------------
-    qrels = load_qrels('original-datasets/nq/qrels/test.tsv')
+    qrels = load_qrels(os.path.join(_DATA_DIR, 'original-datasets', 'nq', 'qrels', 'test.tsv'))
     print(f"Loaded qrels for {len(qrels):,} queries")
 
     # --- Merge and write ----------------------------------------------------
     question_ids = sorted(queries.keys(), key=lambda x: int(x.replace('test', '')))
 
-    os.makedirs('experiment-datasets', exist_ok=True)
+    os.makedirs(os.path.join(_DATA_DIR, 'experiment-datasets'), exist_ok=True)
 
-    qjsonl_path = os.path.join('experiment-datasets', 'nq-questions.jsonl')
+    qjsonl_path = os.path.join(_DATA_DIR, 'experiment-datasets', 'nq-questions.jsonl')
     with open(qjsonl_path, 'w') as f:
         for qid in question_ids:
             record = {
