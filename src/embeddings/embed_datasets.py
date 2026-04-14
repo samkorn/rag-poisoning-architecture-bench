@@ -3,10 +3,11 @@ import os
 os.environ['TRANSFORMERS_VERBOSITY'] = 'error'
 os.environ['HF_HUB_DISABLE_PROGRESS_BARS'] = '1'
 import json
-import modal
 import pickle
-import numpy as np
+
+import modal
 import transformers
+import numpy as np
 from dotenv import load_dotenv; load_dotenv()
 
 
@@ -63,78 +64,79 @@ def main():
     # Create vector store directory (if it doesn't already exist)
     os.makedirs('../data/vector-store', exist_ok=True)
 
-    # Embed queries
-    print("Embedding queries...")
-    queries: dict[str, str] = {}
-    with open('../data/original-datasets/nq/queries.jsonl', 'r') as f:
-        for line in f.readlines():
-            line_dict = json.loads(line)
-            queries[line_dict['_id']] = line_dict['text']
-    query_texts = list(queries.values())
-    query_texts_batched = [
-        query_texts[i:i + EMBED_BATCH_SIZE]
-        for i in range(0, len(query_texts), EMBED_BATCH_SIZE)
-    ]
-    query_embeddings_batched = embed_text_batch.map(query_texts_batched)
-    query_embeddings = [embedding for batch in query_embeddings_batched for embedding in batch]
-    query_embeddings_dict = dict(zip(list(queries.keys()), query_embeddings))
-    with open('../data/vector-store/nq-queries-embeddings.pkl', 'wb') as f:
-        pickle.dump(query_embeddings_dict, f)
-    
-    # Embed documents
-    print("Embedding documents - this may take a while...")
-    documents: dict[str, dict[str, str]] = {}
-    with open('../data/original-datasets/nq/corpus.jsonl', 'r') as f:
-        for line in f.readlines():
-            line_dict = json.loads(line)
-            documents[line_dict['_id']] = {'title': line_dict['title'], 'text': line_dict['text']}
-    document_texts = [document['text'] for document in documents.values()]
-    document_texts_batched = [
-        document_texts[i:i + EMBED_BATCH_SIZE]
-        for i in range(0, len(document_texts), EMBED_BATCH_SIZE)
-    ]
-    document_embeddings_batched = embed_text_batch.map(document_texts_batched)
-    document_embeddings = [embedding for batch in document_embeddings_batched for embedding in batch]
-    document_embeddings_dict = dict(zip(list(documents.keys()), document_embeddings))
-    with open('../data/vector-store/nq-original-documents-embeddings.pkl', 'wb') as f:
-        pickle.dump(document_embeddings_dict, f)
-    
-    # Embed naively poisoned documents
-    print("Embedding naively poisoned ('napo') documents...")
-    napo_documents: dict[str, dict[str, str]] = {}
-    with open('../data/experiment-datasets/nq-naive-poisoning/corpus.jsonl', 'r') as f:
+    # TEMP: Commented out — these embeddings already exist. Uncomment to re-embed.
+    # # Embed queries
+    # print("Embedding queries...")
+    # queries: dict[str, str] = {}
+    # with open('../data/original-datasets/nq/queries.jsonl', 'r') as f:
+    #     for line in f.readlines():
+    #         line_dict = json.loads(line)
+    #         queries[line_dict['_id']] = line_dict['text']
+    # query_texts = list(queries.values())
+    # query_texts_batched = [
+    #     query_texts[i:i + EMBED_BATCH_SIZE]
+    #     for i in range(0, len(query_texts), EMBED_BATCH_SIZE)
+    # ]
+    # query_embeddings_batched = embed_text_batch.map(query_texts_batched)
+    # query_embeddings = [embedding for batch in query_embeddings_batched for embedding in batch]
+    # query_embeddings_dict = dict(zip(list(queries.keys()), query_embeddings))
+    # with open('../data/vector-store/nq-queries-embeddings.pkl', 'wb') as f:
+    #     pickle.dump(query_embeddings_dict, f)
+    #
+    # # Embed documents
+    # print("Embedding documents - this may take a while...")
+    # documents: dict[str, dict[str, str]] = {}
+    # with open('../data/original-datasets/nq/corpus.jsonl', 'r') as f:
+    #     for line in f.readlines():
+    #         line_dict = json.loads(line)
+    #         documents[line_dict['_id']] = {'title': line_dict['title'], 'text': line_dict['text']}
+    # document_texts = [document['text'] for document in documents.values()]
+    # document_texts_batched = [
+    #     document_texts[i:i + EMBED_BATCH_SIZE]
+    #     for i in range(0, len(document_texts), EMBED_BATCH_SIZE)
+    # ]
+    # document_embeddings_batched = embed_text_batch.map(document_texts_batched)
+    # document_embeddings = [embedding for batch in document_embeddings_batched for embedding in batch]
+    # document_embeddings_dict = dict(zip(list(documents.keys()), document_embeddings))
+    # with open('../data/vector-store/nq-original-documents-embeddings.pkl', 'wb') as f:
+    #     pickle.dump(document_embeddings_dict, f)
+    #
+    # # Embed naively poisoned documents
+    # print("Embedding naively poisoned ('napo') documents...")
+    # napo_documents: dict[str, dict[str, str]] = {}
+    # with open('../data/experiment-datasets/nq-naive-poisoning/corpus.jsonl', 'r') as f:
+    #     for line in f.readlines():
+    #         line_dict = json.loads(line)
+    #         if line_dict['_id'].startswith('doc'):
+    #             continue
+    #         napo_documents[line_dict['_id']] = {'title': line_dict['title'], 'text': line_dict['text']}
+    # napo_document_texts = [document['text'] for document in napo_documents.values()]
+    # napo_document_texts_batched = [
+    #     napo_document_texts[i:i + EMBED_BATCH_SIZE]
+    #     for i in range(0, len(napo_document_texts), EMBED_BATCH_SIZE)
+    # ]
+    # napo_document_embeddings_batched = embed_text_batch.map(napo_document_texts_batched)
+    # napo_document_embeddings = [embedding for batch in napo_document_embeddings_batched for embedding in batch]
+    # napo_document_embeddings_dict = dict(zip(list(napo_documents.keys()), napo_document_embeddings))
+    # with open('../data/vector-store/nq-naive-poisoned-documents-embeddings.pkl', 'wb') as f:
+    #     pickle.dump(napo_document_embeddings_dict, f)
+
+    # Embed CorruptRAG-AK poisoned documents
+    print("Embedding CorruptRAG-AK poisoned ('crak') documents...")
+    crak_documents: dict[str, dict[str, str]] = {}
+    with open('../data/experiment-datasets/nq-corruptrag-ak-poisoning/corpus.jsonl', 'r') as f:
         for line in f.readlines():
             line_dict = json.loads(line)
             if line_dict['_id'].startswith('doc'):
                 continue
-            napo_documents[line_dict['_id']] = {'title': line_dict['title'], 'text': line_dict['text']}
-    napo_document_texts = [document['text'] for document in napo_documents.values()]
-    napo_document_texts_batched = [
-        napo_document_texts[i:i + EMBED_BATCH_SIZE]
-        for i in range(0, len(napo_document_texts), EMBED_BATCH_SIZE)
+            crak_documents[line_dict['_id']] = {'title': line_dict['title'], 'text': line_dict['text']}
+    crak_document_texts = [document['text'] for document in crak_documents.values()]
+    crak_document_texts_batched = [
+        crak_document_texts[i:i + EMBED_BATCH_SIZE]
+        for i in range(0, len(crak_document_texts), EMBED_BATCH_SIZE)
     ]
-    napo_document_embeddings_batched = embed_text_batch.map(napo_document_texts_batched)
-    napo_document_embeddings = [embedding for batch in napo_document_embeddings_batched for embedding in batch]
-    napo_document_embeddings_dict = dict(zip(list(napo_documents.keys()), napo_document_embeddings))
-    with open('../data/vector-store/nq-naive-poisoned-documents-embeddings.pkl', 'wb') as f:
-        pickle.dump(napo_document_embeddings_dict, f)
-    
-    # Embed adversarially poisoned documents
-    print("Embedding adversarially poisoned ('adpo') documents...")
-    adpo_documents: dict[str, dict[str, str]] = {}
-    with open('../data/experiment-datasets/nq-adversarial-poisoning/corpus.jsonl', 'r') as f:
-        for line in f.readlines():
-            line_dict = json.loads(line)
-            if line_dict['_id'].startswith('doc'):
-                continue
-            adpo_documents[line_dict['_id']] = {'title': line_dict['title'], 'text': line_dict['text']}
-    adpo_document_texts = [document['text'] for document in adpo_documents.values()]
-    adpo_document_texts_batched = [
-        adpo_document_texts[i:i + EMBED_BATCH_SIZE]
-        for i in range(0, len(adpo_document_texts), EMBED_BATCH_SIZE)
-    ]
-    adpo_document_embeddings_batched = embed_text_batch.map(adpo_document_texts_batched)
-    adpo_document_embeddings = [embedding for batch in adpo_document_embeddings_batched for embedding in batch]
-    adpo_document_embeddings_dict = dict(zip(list(adpo_documents.keys()), adpo_document_embeddings))
-    with open('../data/vector-store/nq-adversarial-poisoned-documents-embeddings.pkl', 'wb') as f:
-        pickle.dump(adpo_document_embeddings_dict, f)
+    crak_document_embeddings_batched = embed_text_batch.map(crak_document_texts_batched)
+    crak_document_embeddings = [embedding for batch in crak_document_embeddings_batched for embedding in batch]
+    crak_document_embeddings_dict = dict(zip(list(crak_documents.keys()), crak_document_embeddings))
+    with open('../data/vector-store/nq-corruptrag-ak-poisoned-documents-embeddings.pkl', 'wb') as f:
+        pickle.dump(crak_document_embeddings_dict, f)
