@@ -1,10 +1,10 @@
+import modal
 import sys
 import os
 import time
 from typing import Optional
 from dataclasses import dataclass
 
-import logfire
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.models.openai import OpenAIResponsesModel, OpenAIResponsesModelSettings
 
@@ -13,9 +13,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from embeddings.vector_store import VectorStore
 
 
-# logfire configuration
-logfire.configure(console=False)
-logfire.instrument_pydantic_ai() 
+# logfire configuration, run only if not in a Modal container
+if modal.is_local():
+    import logfire
+    logfire.configure(console=False)
+    logfire.instrument_pydantic_ai() 
 
 
 # ------------------------------------------------------------------
@@ -27,21 +29,22 @@ class AgenticRAGDeps:
     vector_store: VectorStore
     top_k: int
     query_id: Optional[str] = None
+    log_tag: str = ''
 
 
 def search_knowledge_base(
     ctx: RunContext[AgenticRAGDeps],
     question: str,
-    num_results: int = 5,
 ) -> str:
     """Search the knowledge base for documents relevant to a question."""
-    print(f">>> Searching knowledge base for question: {question}")
+    tag = ctx.deps.log_tag
+    print(f"{tag} >>> Searching knowledge base for question: {question}")
     retrieved_document_results = ctx.deps.vector_store.retrieve(
         question=question,
         top_k=ctx.deps.top_k,
         query_id=ctx.deps.query_id
     )
-    print(f">>> Retrieved {len(retrieved_document_results)} documents")
+    print(f"{tag} >>> Retrieved {len(retrieved_document_results)} documents")
     retrieved_documents = [str(result) for result in retrieved_document_results]
     context = "\n\n".join(retrieved_documents)
     return context
@@ -49,7 +52,8 @@ def search_knowledge_base(
 
 def get_document_by_id(ctx: RunContext[AgenticRAGDeps], doc_id: str) -> str:
     """Get a specific document by ID for closer reading."""
-    print(f">>> Getting document by ID: {doc_id}")
+    tag = ctx.deps.log_tag
+    print(f"{tag} >>> Getting document by ID: {doc_id}")
     doc_dict = ctx.deps.vector_store.get_document_from_doc_id(doc_id)
     formatted_doc = f"[{doc_id}] (title: {doc_dict['title']})\n{doc_dict['text']}"
     return formatted_doc
@@ -99,7 +103,8 @@ class AgenticRAG(QASystem):
         deps = AgenticRAGDeps(
             vector_store=self.vector_store,
             top_k=self.top_k,
-            query_id=query_id
+            query_id=query_id,
+            log_tag=getattr(self, '_log_tag', ''),
         )
         result = self.agent.run_sync(question, deps=deps)
         return result.output
