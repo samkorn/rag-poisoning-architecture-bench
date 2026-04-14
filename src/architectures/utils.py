@@ -6,7 +6,7 @@ from dotenv import load_dotenv; load_dotenv()
 from tenacity import retry, stop_after_attempt, wait_exponential_jitter
 from timeout_decorator import timeout
 
-from qa_system import STANDARD_PROMPT
+from src.architectures.qa_system import STANDARD_PROMPT
 
 
 @retry(

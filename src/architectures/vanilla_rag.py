@@ -1,11 +1,9 @@
-import sys
 import os
 import time
 
-from qa_system import QASystem
-from utils import execute_llm_call
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from embeddings.vector_store import VectorStore
+from src.architectures.qa_system import QASystem
+from src.architectures.utils import execute_llm_call
+from src.embeddings.vector_store import VectorStore
 
 
 class VanillaRAG(QASystem):

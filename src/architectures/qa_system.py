@@ -1,10 +1,7 @@
-import sys
-import os
 from abc import ABC, abstractmethod
 from typing import Optional
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from data.utils import get_question_from_query_id
+from src.data.utils import get_question_from_query_id
 
 
 STANDARD_PROMPT = """
