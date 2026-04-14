@@ -1,0 +1,27 @@
+# LLM & Agents
+openai
+pydantic-ai
+agno
+rlms
+
+# ML & Embeddings
+torch
+transformers
+numpy
+scikit-learn
+sentence-transformers
+
+# Vector Search
+faiss-cpu
+
+# Data & Datasets
+beir
+
+# Infrastructure
+modal
+
+# Visualization
+matplotlib
+
+# Utilities
+python-dotenv

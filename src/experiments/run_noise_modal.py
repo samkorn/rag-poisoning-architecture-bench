@@ -1,0 +1,351 @@
+"""
+experiments/run_noise_modal.py
+
+Modal runner for the NOISE filter — parallelizes noise classification
+across up to 99 containers.
+
+Usage (from root directory):
+    # Full run (1,150 questions, writes to Modal Volume, downloads locally)
+    modal run --detach workspace/experiments/run_noise_modal.py
+
+    # Dry run (no API calls, just show what would be done)
+    modal run workspace/experiments/run_noise_modal.py --dry-run
+
+    # Download results + report only (no new classification)
+    python workspace/experiments/run_noise_modal.py --report-only
+
+    # Override model / disable web search
+    modal run --detach workspace/experiments/run_noise_modal.py --model gpt-5-nano
+    modal run --detach workspace/experiments/run_noise_modal.py --no-web-search
+"""
+
+import json
+import os
+import sys
+import time
+
+import modal
+
+
+# ---------------------------------------------------------------------------
+# Modal infrastructure
+# ---------------------------------------------------------------------------
+
+app = modal.App('rag-poisoning-noise')
+
+image = (
+    modal.Image.debian_slim(python_version='3.12')
+    .pip_install(
+        'openai',
+        'pydantic',
+        'python-dotenv',
+    )
+    # Mount only the noise filter module + dependencies.
+    # Paths are relative to CWD (project root), not this file.
+    .add_local_file(
+        'workspace/experiments/noise_filter.py',
+        remote_path='/app/experiments/noise_filter.py',
+    )
+)
+
+volume = modal.Volume.from_name('rag-poisoning-data', create_if_missing=True)
+VOLUME_MOUNT = '/vol'
+NOISE_RESULTS_DIR = f'{VOLUME_MOUNT}/results/noise'
+
+secrets = [modal.Secret.from_name('openai-rag-poisoning')]
+
+_EXPERIMENTS_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+# ---------------------------------------------------------------------------
+# Worker
+# ---------------------------------------------------------------------------
+
+@app.function(
+    image=image,
+    volumes={VOLUME_MOUNT: volume},
+    secrets=secrets,
+    timeout=60 * 2,  # 2 min per question (generous)
+    retries=modal.Retries(max_retries=2, backoff_coefficient=2.0),
+    max_containers=99,
+)
+def classify_noise(
+    question_dict: dict,
+    model: str,
+    reasoning_effort: str,
+    web_search: bool = True,
+) -> dict:
+    """Classify a single question as NOISE or not. One unit of starmap work."""
+    sys.path.insert(0, '/app')
+
+    from experiments.noise_filter import check_noise
+
+    qid = question_dict['query_id']
+    result = {
+        'question_id': qid,
+        'question': question_dict['question'],
+        'correct_answer': question_dict['correct_answer'],
+        'target_answer': question_dict['target_answer'],
+        'model': model,
+        'reasoning_effort': reasoning_effort,
+        'web_search': web_search,
+        'is_noise': None,
+        'noise_type': None,
+        'confidence': None,
+        'reasoning': None,
+        'input_tokens': None,
+        'output_tokens': None,
+        'total_tokens': None,
+        'latency_seconds': None,
+        'error': None,
+    }
+
+    try:
+        t0 = time.monotonic()
+        noise_result, usage = check_noise(
+            question=question_dict['question'],
+            correct_answer=question_dict['correct_answer'],
+            target_answer=question_dict['target_answer'],
+            model=model,
+            reasoning_effort=reasoning_effort,
+            web_search=web_search,
+        )
+        elapsed = time.monotonic() - t0
+
+        result['is_noise'] = noise_result.is_noise
+        result['noise_type'] = noise_result.noise_type
+        result['confidence'] = noise_result.confidence
+        result['reasoning'] = noise_result.reasoning
+        result['input_tokens'] = usage['input_tokens']
+        result['output_tokens'] = usage['output_tokens']
+        result['total_tokens'] = usage['total_tokens']
+        result['latency_seconds'] = round(elapsed, 3)
+    except Exception as e:
+        result['error'] = f"{type(e).__name__}: {e}"
+        result['latency_seconds'] = round(time.monotonic() - t0, 3)
+
+    # Write to volume.
+    os.makedirs(NOISE_RESULTS_DIR, exist_ok=True)
+    result_path = os.path.join(NOISE_RESULTS_DIR, f'{qid}.json')
+    with open(result_path, 'w') as f:
+        json.dump(result, f, indent=2)
+    volume.commit()
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Orchestrator
+# ---------------------------------------------------------------------------
+
+@app.function(
+    image=image,
+    volumes={VOLUME_MOUNT: volume},
+    secrets=secrets,
+    timeout=60 * 60,  # 1 hour
+)
+def run_noise_orchestrator(model: str, reasoning_effort: str, web_search: bool = True, dry_run: bool = False):
+    """Load questions from volume, skip already-classified, dispatch workers."""
+    volume.reload()
+
+    # Load gold-filtered questions from volume.
+    questions_path = os.path.join(
+        VOLUME_MOUNT, 'experiment-datasets', 'nq-questions-gold-filtered.jsonl'
+    )
+    questions = []
+    with open(questions_path) as f:
+        for line in f:
+            questions.append(json.loads(line))
+
+    print(f"Total questions: {len(questions)}")
+
+    # Check which are already done.
+    already_done = set()
+    if os.path.isdir(NOISE_RESULTS_DIR):
+        for fname in os.listdir(NOISE_RESULTS_DIR):
+            if not fname.endswith('.json'):
+                continue
+            fpath = os.path.join(NOISE_RESULTS_DIR, fname)
+            try:
+                with open(fpath) as f:
+                    r = json.load(f)
+                if r.get('noise_type') is not None and r.get('error') is None:
+                    already_done.add(r['question_id'])
+            except (json.JSONDecodeError, OSError, KeyError):
+                pass
+
+    to_classify = [q for q in questions if q['query_id'] not in already_done]
+    print(f"Already done: {len(already_done)}")
+    print(f"To classify:  {len(to_classify)}")
+
+    if dry_run:
+        print("\n--- DRY RUN ---")
+        print(f"Would classify {len(to_classify)} questions with {model}")
+        return
+
+    if not to_classify:
+        print("All questions already classified.")
+        return
+
+    # Dispatch via starmap.
+    print(f"\nDispatching {len(to_classify)} questions to up to 99 containers...")
+
+    worker_args = [(q, model, reasoning_effort, web_search) for q in to_classify]
+
+    completed = 0
+    errors = 0
+    noise_count = 0
+    start_time = time.time()
+
+    for result in classify_noise.starmap(worker_args, order_outputs=False):
+        if result.get('error'):
+            errors += 1
+        else:
+            completed += 1
+            if result.get('is_noise'):
+                noise_count += 1
+
+        done = completed + errors
+        elapsed = time.time() - start_time
+        rate = done / elapsed * 60 if elapsed > 0 else 0
+
+        if done % 50 == 0 or done == len(to_classify):
+            print(f"  [{done}/{len(to_classify)}] "
+                  f"{completed} ok, {errors} err, {noise_count} noise "
+                  f"({rate:.0f}/min)", flush=True)
+
+    print(f"\n{'=' * 60}")
+    print("NOISE FILTER COMPLETE")
+    print(f"{'=' * 60}")
+    print(f"Classified:  {completed}")
+    print(f"Errors:      {errors}")
+    print(f"NOISE found: {noise_count}")
+
+    # Write summary.
+    summary_path = os.path.join(NOISE_RESULTS_DIR, 'summary.json')
+    with open(summary_path, 'w') as f:
+        json.dump({
+            'completed': completed,
+            'errors': errors,
+            'noise_found': noise_count,
+            'previously_done': len(already_done),
+            'total_questions': len(questions),
+            'model': model,
+            'reasoning_effort': reasoning_effort,
+            'web_search': web_search,
+        }, f, indent=2)
+    volume.commit()
+
+
+# ---------------------------------------------------------------------------
+# Download results from volume to local disk
+# ---------------------------------------------------------------------------
+
+def download_results() -> str:
+    """Download noise results from Modal Volume to local results/noise/ dir.
+
+    Returns the local output directory path.
+    """
+    vol = modal.Volume.from_name('rag-poisoning-data')
+    local_dir = os.path.join(_EXPERIMENTS_DIR, 'results', 'noise')
+    os.makedirs(local_dir, exist_ok=True)
+
+    try:
+        entries = [
+            e for e in vol.listdir('results/noise/')
+            if e.path.endswith('.json')
+        ]
+    except Exception:
+        print("No noise results found on volume.")
+        return local_dir
+
+    # Count local files.
+    local_count = sum(1 for f in os.listdir(local_dir) if f.endswith('.json'))
+
+    if local_count >= len(entries) and local_count > 0:
+        print(f"Local results already up to date ({local_count} files).")
+        return local_dir
+
+    print(f"Downloading {len(entries)} files (local has {local_count})...")
+    downloaded = 0
+    for entry in entries:
+        fname = os.path.basename(entry.path)
+        local_path = os.path.join(local_dir, fname)
+
+        content = b''
+        for chunk in vol.read_file(entry.path):
+            content += chunk
+        with open(local_path, 'wb') as f:
+            f.write(content)
+        downloaded += 1
+
+    print(f"Downloaded {downloaded} files to {local_dir}")
+    return local_dir
+
+
+# ---------------------------------------------------------------------------
+# Local entrypoint (Modal CLI)
+# ---------------------------------------------------------------------------
+
+@app.local_entrypoint()
+def main(
+    model: str = 'gpt-5-mini',
+    reasoning_effort: str = 'high',
+    web_search: bool = True,
+    dry_run: bool = False,
+):
+    run_noise_orchestrator.remote(
+        model=model,
+        reasoning_effort=reasoning_effort,
+        web_search=web_search,
+        dry_run=dry_run,
+    )
+
+    if not dry_run:
+        print("\nDownloading results from volume...")
+        local_dir = download_results()
+
+        # Print report.
+        _workspace_root = os.path.normpath(os.path.join(_EXPERIMENTS_DIR, '..'))
+        if _workspace_root not in sys.path:
+            sys.path.insert(0, _workspace_root)
+        if os.path.join(_workspace_root, 'architectures') not in sys.path:
+            sys.path.insert(0, os.path.join(_workspace_root, 'architectures'))
+
+        from experiments.noise_filter import print_report
+        print_report(local_dir)
+
+
+# ---------------------------------------------------------------------------
+# Direct invocation for report-only (no Modal image upload)
+# ---------------------------------------------------------------------------
+
+if __name__ == '__main__':
+    import argparse
+
+    _workspace_root = os.path.normpath(os.path.join(_EXPERIMENTS_DIR, '..'))
+    if _workspace_root not in sys.path:
+        sys.path.insert(0, _workspace_root)
+    if os.path.join(_workspace_root, 'architectures') not in sys.path:
+        sys.path.insert(0, os.path.join(_workspace_root, 'architectures'))
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--report-only', action='store_true',
+                        help="Download results from volume and print report")
+    parser.add_argument('--dry-run', action='store_true')
+    parser.add_argument('--model', default='gpt-5-mini')
+    parser.add_argument('--reasoning-effort', default='high',
+                        choices=['low', 'medium', 'high'])
+    parser.add_argument('--no-web-search', action='store_true',
+                        help="Disable web search (enabled by default)")
+    args = parser.parse_args()
+
+    if args.report_only:
+        print("Downloading noise results from Modal Volume...")
+        local_dir = download_results()
+        from experiments.noise_filter import print_report
+        print_report(local_dir)
+    else:
+        print("Direct invocation only supports --report-only.")
+        print("For full runs, use: modal run experiments/run_noise_modal.py")
+        raise SystemExit(1)

@@ -26,7 +26,7 @@ class VanillaRAG(QASystem):
             query_id=query_id
         )
         retrieved_documents = [result['text'] for result in retrieved_document_results]
-        context = "\n\n".join(retrieved_documents)
+        context = '\n\n'.join(retrieved_documents)
         user_prompt = f"Context:\n{context}\n\nQuestion: {question}"
         answer = execute_llm_call(
             model_id=self.model_id,
