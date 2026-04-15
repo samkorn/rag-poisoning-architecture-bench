@@ -1,3 +1,4 @@
+import threading
 from typing import Optional, Type, Union
 
 from openai import OpenAI
@@ -7,6 +8,19 @@ from tenacity import retry, stop_after_attempt, wait_exponential_jitter
 from timeout_decorator import timeout
 
 from src.architectures.qa_system import STANDARD_PROMPT
+
+
+def _should_use_signals(use_signals: Optional[bool]) -> bool:
+    """Determine timeout strategy: signals (local) vs. multiprocessing (Modal).
+
+    - use_signals=True: SIGALRM-based, no pickling, must be main thread.
+    - use_signals=False: multiprocessing-based, works in non-main threads
+      (Modal workers) but requires pickling.
+    - use_signals=None (default): auto-detect — use signals if on main thread.
+    """
+    if use_signals is not None:
+        return use_signals
+    return threading.current_thread() is threading.main_thread()
 
 
 @retry(
@@ -22,15 +36,10 @@ def execute_llm_call(
     user_prompt: str = ' ',
     temperature: float = 1.0,
     response_format: Optional[Type[BaseModel]] = None,
-    use_signals: bool = False,
+    use_signals: Optional[bool] = None,
     truncation: Optional[str] = None,
 ) -> Union[str, BaseModel]:
-    # use_signals=False (default): multiprocessing-based timeout, works in
-    #   non-main threads (Modal workers) but requires pickling — breaks with
-    #   sys.path-based imports.
-    # use_signals=True: SIGALRM-based timeout, no pickling, but must run on
-    #   the main thread (fine for local scripts).
-    @timeout(60*3, use_signals=use_signals)
+    @timeout(60*3, use_signals=_should_use_signals(use_signals))
     def _call():
         openai_client = OpenAI()
         params = dict(

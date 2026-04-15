@@ -25,6 +25,8 @@ import traceback
 from dataclasses import dataclass, field, asdict
 from typing import Optional, Literal
 
+import threading
+
 from tenacity import retry, stop_after_attempt, wait_exponential_jitter
 from timeout_decorator import timeout
 
@@ -283,7 +285,6 @@ def create_qa_system(config: ExperimentConfig):
     stop=stop_after_attempt(2), # 2 attempts
     reraise=True,
 )
-@timeout(60*10, use_signals=False)  # 10 minutes; use_signals=False for non-main-thread (Modal workers)
 def _run_single_question(
     config: ExperimentConfig,
     question: dict,
@@ -401,7 +402,8 @@ def run_single_question(
 ) -> QuestionResult:
     """Execute one question through the configured architecture.
 
-    Delegates to _run_single_question (which has retry + timeout).
+    Delegates to _run_single_question (which has retry) wrapped in a dynamic
+    timeout (signals on main thread, multiprocessing on Modal workers).
     **Never raises** — all errors are captured in QuestionResult.error so
     that one bad question cannot crash the worker or lose batch progress.
     """
@@ -417,7 +419,9 @@ def run_single_question(
     log_tag = make_log_tag(config, query_id, question_num, batch_size)
 
     try:
-        return _run_single_question(config, question, qa_system, log_tag)
+        use_signals = threading.current_thread() is threading.main_thread()
+        timed_fn = timeout(60*10, use_signals=use_signals)(_run_single_question)
+        return timed_fn(config, question, qa_system, log_tag)
     except Exception as e:
         print(f"{log_tag} ERROR: {type(e).__name__}: {e}")
         return QuestionResult(

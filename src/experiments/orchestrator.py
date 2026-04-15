@@ -84,6 +84,8 @@ image = (
         "AutoModel.from_pretrained('facebook/contriever')"
         "\""
     )
+    # Ensure /app is on PYTHONPATH so `from src.X.Y import Z` works at import time.
+    .env({'PYTHONPATH': '/app'})
     # Mount project Python code into /app/src/ so `from src.X.Y import Z` works.
     .add_local_file('src/__init__.py', remote_path='/app/src/__init__.py')
     .add_local_dir('src/architectures/', remote_path='/app/src/architectures/')
@@ -138,15 +140,18 @@ def setup_container():
     if '/app' not in sys.path:
         sys.path.insert(0, '/app')
 
-    # Symlink heavy data directories from Volume into /app/src/data/
-    symlinks = {
-        '/app/src/data/vector-store': f'{VOLUME_MOUNT}/vector-store',
-        '/app/src/data/original-datasets': f'{VOLUME_MOUNT}/original-datasets',
-        '/app/src/data/experiment-datasets': f'{VOLUME_MOUNT}/experiment-datasets',
-    }
-    for link, target in symlinks.items():
-        if os.path.exists(target) and not os.path.exists(link):
-            os.symlink(target, link)
+    # Symlink heavy data directories from Volume into wherever src/data/ lives.
+    # Modal may mount code at /app/src/ (via image.add_local_dir) or /root/src/
+    # (via auto-mount from test files), so create symlinks in both locations.
+    data_dirs = ['/app/src/data', '/root/src/data']
+    for data_dir in data_dirs:
+        if not os.path.isdir(data_dir):
+            continue
+        for subdir in ('vector-store', 'original-datasets', 'experiment-datasets'):
+            link = os.path.join(data_dir, subdir)
+            target = f'{VOLUME_MOUNT}/{subdir}'
+            if os.path.exists(target) and not os.path.exists(link):
+                os.symlink(target, link)
 
 
 # ---------------------------------------------------------------------------
