@@ -281,10 +281,6 @@ def create_qa_system(config: ExperimentConfig):
 # Core execution: single question
 # ---------------------------------------------------------------------------
 
-@retry(
-    stop=stop_after_attempt(2), # 2 attempts
-    reraise=True,
-)
 def _run_single_question(
     config: ExperimentConfig,
     question: dict,
@@ -393,6 +389,25 @@ def _run_single_question(
     )
 
 
+# Pre-build both timeout flavors at module load so retry-wraps-timeout ordering
+# is preserved and we avoid per-call wrapping overhead. Auto-dispatch at call
+# time based on thread context.
+#   use_signals=True:  SIGALRM-based, main-thread only. Used locally.
+#   use_signals=False: multiprocessing-based, works in non-main threads (Modal
+#                      workers). Note: on macOS this requires picklable args,
+#                      which the qa_system isn't — so signals must be used
+#                      locally (mac defaults to spawn start method).
+_run_single_question_retry_signal_timed = retry(
+    stop=stop_after_attempt(2),
+    reraise=True,
+)(timeout(60*10, use_signals=True)(_run_single_question))
+
+_run_single_question_retry_thread_timed = retry(
+    stop=stop_after_attempt(2),
+    reraise=True,
+)(timeout(60*10, use_signals=False)(_run_single_question))
+
+
 def run_single_question(
     config: ExperimentConfig,
     question: dict,  # {_id, text, answer, target_answer?, ...}
@@ -402,8 +417,7 @@ def run_single_question(
 ) -> QuestionResult:
     """Execute one question through the configured architecture.
 
-    Delegates to _run_single_question (which has retry) wrapped in a dynamic
-    timeout (signals on main thread, multiprocessing on Modal workers).
+    Delegates to _run_single_question (which has retry + timeout).
     **Never raises** — all errors are captured in QuestionResult.error so
     that one bad question cannot crash the worker or lose batch progress.
     """
@@ -419,9 +433,12 @@ def run_single_question(
     log_tag = make_log_tag(config, query_id, question_num, batch_size)
 
     try:
-        use_signals = threading.current_thread() is threading.main_thread()
-        timed_fn = timeout(60*10, use_signals=use_signals)(_run_single_question)
-        return timed_fn(config, question, qa_system, log_tag)
+        _run_single_question_retry_timed = (
+            _run_single_question_retry_signal_timed
+            if threading.current_thread() is threading.main_thread()
+            else _run_single_question_retry_thread_timed
+        )
+        return _run_single_question_retry_timed(config, question, qa_system, log_tag)
     except Exception as e:
         print(f"{log_tag} ERROR: {type(e).__name__}: {e}")
         return QuestionResult(
@@ -462,6 +479,10 @@ def run_question_batch(
     """
     exp_dir = os.path.join(results_dir, config.experiment_id)
     os.makedirs(exp_dir, exist_ok=True)
+    # Commit so the directory survives the volume.reload() calls below —
+    # otherwise reload reverts our uncommitted mkdir and the first write fails.
+    if modal_volume is not None:
+        modal_volume.commit()
 
     # create_qa_system() triggers VectorStore(corpus_type) internally,
     # which loads the FAISS index + corpus once (singleton).  Subsequent
