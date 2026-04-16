@@ -1,48 +1,49 @@
-"""
-Quick smoke test for experiment.py.
+"""Tests for src.experiments.experiment.
 
-Tests run_single_question() and run_question_batch() with 2-3 real NQ
-questions against vanilla RAG (fastest architecture).
-
-Run from repo root:
-    python tests/test_experiment.py
+* :class:`ExperimentHelpersUnitTests` — pure-Python helpers
+  (is_poison_doc_id, detect_*, make_log_tag, split_questions). No data.
+* :class:`RetrievalCaptureUnitTests` — RetrievalCapture intercepts the
+  vector store calls. Requires the FAISS index, so it's marked
+  integration even though the test itself is structural.
+* :class:`<Architecture>RunIntegrationTests` — one class per architecture
+  (vanilla clean, vanilla poisoned, agentic, RLM, MADAM) and one for
+  the batch runner. Each makes live OpenAI calls and requires the
+  vector store + question fixtures on disk.
 """
 
 import json
 import os
 import shutil
 import tempfile
+import unittest
+
+import pytest
+
 
 _REPO_ROOT = os.path.normpath(
     os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 )
 
-from src.experiments.experiment import (
-    ExperimentConfig,
-    QuestionResult,
-    RetrievalCapture,
-    create_qa_system,
-    detect_gold_in_results,
-    detect_poison_in_results,
-    is_poison_doc_id,
-    run_question_batch,
-    run_single_question,
-    split_questions,
-)
+TEST_QUERY_IDS = ['test0', 'test1', 'test2']
 
 
-# ---------------------------------------------------------------------------
-# Load test questions from pre-built questions.jsonl
-# ---------------------------------------------------------------------------
-
-def load_test_questions(query_ids: list[str]) -> dict[str, dict]:
-    """Load question dicts from data/experiment-datasets/nq-questions.jsonl.
-
-    Prerequisite: ``python src/data/create_questions.py``
-    """
+def _data_present_or_skip() -> str:
+    """Return the questions.jsonl path; skip if data isn't on disk."""
     questions_path = os.path.join(
         _REPO_ROOT, 'src', 'data', 'experiment-datasets', 'nq-questions.jsonl'
     )
+    if not os.path.exists(questions_path):
+        raise unittest.SkipTest(
+            f"Integration test requires {questions_path}. "
+            f"Run scripts/setup_test_symlinks.sh (local dev) or "
+            f"scripts/download_data.sh (once Phase 5 lands)."
+        )
+    return questions_path
+
+
+def _load_test_questions(query_ids: list[str]) -> dict[str, dict]:
+    """Load question dicts from data/experiment-datasets/nq-questions.jsonl."""
+    questions_path = _data_present_or_skip()
     query_id_set = set(query_ids)
     questions: dict[str, dict] = {}
     with open(questions_path) as f:
@@ -53,257 +54,347 @@ def load_test_questions(query_ids: list[str]) -> dict[str, dict]:
     return questions
 
 
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# Unit suite
+# ===========================================================================
 
-TEST_QUERY_IDS = ['test0', 'test1', 'test2']
+class ExperimentHelpersUnitTests(unittest.TestCase):
+    """Pure-Python helpers from src.experiments.experiment — no IO."""
+
+    def test_is_poison_doc_id_positive(self):
+        from src.experiments.experiment import is_poison_doc_id
+        for doc_id in (
+            'poisoned-naive-q:test0',
+            'poisoned-corruptrag-ak-q:test1234',
+            'poisoned',  # bare prefix still counts
+        ):
+            self.assertTrue(is_poison_doc_id(doc_id))
+
+    def test_is_poison_doc_id_negative(self):
+        from src.experiments.experiment import is_poison_doc_id
+        for doc_id in ('doc0', 'doc12345', '', 'poison-not-quite', 'POISONED-uppercase'):
+            self.assertFalse(is_poison_doc_id(doc_id))
+
+    def test_detect_poison_in_results_no_poison(self):
+        from src.experiments.experiment import detect_poison_in_results
+        docs = [{'doc_id': f'doc{i}'} for i in range(5)]
+        found, rank = detect_poison_in_results(docs)
+        self.assertFalse(found)
+        self.assertIsNone(rank)
+
+    def test_detect_poison_in_results_at_rank_one(self):
+        from src.experiments.experiment import detect_poison_in_results
+        docs = [
+            {'doc_id': 'poisoned-naive-q:test0'},
+            {'doc_id': 'doc1'},
+            {'doc_id': 'doc2'},
+        ]
+        found, rank = detect_poison_in_results(docs)
+        self.assertTrue(found)
+        self.assertEqual(rank, 1)
+
+    def test_detect_poison_in_results_at_rank_five(self):
+        from src.experiments.experiment import detect_poison_in_results
+        docs = [{'doc_id': f'doc{i}'} for i in range(4)]
+        docs.append({'doc_id': 'poisoned-corruptrag-ak-q:test0'})
+        docs.extend({'doc_id': f'doc{i}'} for i in range(5, 10))
+        found, rank = detect_poison_in_results(docs)
+        self.assertTrue(found)
+        self.assertEqual(rank, 5)
+
+    def test_detect_gold_in_results_no_gold(self):
+        from src.experiments.experiment import detect_gold_in_results
+        docs = [{'doc_id': f'doc{i}'} for i in range(5)]
+        ranks = detect_gold_in_results(docs, gold_doc_ids=['doc99', 'doc100'])
+        self.assertEqual(ranks, [])
+
+    def test_detect_gold_in_results_single(self):
+        from src.experiments.experiment import detect_gold_in_results
+        docs = [{'doc_id': f'doc{i}'} for i in range(5)]
+        ranks = detect_gold_in_results(docs, gold_doc_ids=['doc2'])
+        self.assertEqual(ranks, [3])  # 1-indexed
+
+    def test_detect_gold_in_results_multiple(self):
+        from src.experiments.experiment import detect_gold_in_results
+        docs = [{'doc_id': f'doc{i}'} for i in range(10)]
+        ranks = detect_gold_in_results(docs, gold_doc_ids=['doc0', 'doc5', 'doc9'])
+        self.assertEqual(ranks, [1, 6, 10])
+
+    def test_make_log_tag_with_k(self):
+        from src.experiments.experiment import ExperimentConfig, make_log_tag
+        config = ExperimentConfig(
+            experiment_id='vanilla_clean',
+            architecture='vanilla',
+            attack_type='clean',
+            k=10,
+        )
+        self.assertEqual(make_log_tag(config, 'test0'), '[vanilla k=10 clean test0]')
+
+    def test_make_log_tag_rlm_no_k(self):
+        from src.experiments.experiment import ExperimentConfig, make_log_tag
+        config = ExperimentConfig(
+            experiment_id='rlm_clean',
+            architecture='rlm',
+            attack_type='clean',
+            k=None,
+        )
+        self.assertEqual(make_log_tag(config, 'test0'), '[rlm clean test0]')
+
+    def test_make_log_tag_with_batch_info(self):
+        from src.experiments.experiment import ExperimentConfig, make_log_tag
+        config = ExperimentConfig(
+            experiment_id='madam_naive',
+            architecture='madam',
+            attack_type='naive',
+            k=10,
+        )
+        tag = make_log_tag(config, 'test5', question_num=3, batch_size=12)
+        self.assertEqual(tag, '[madam k=10 naive test5 q=3/12]')
+
+    def test_split_questions_round_robin(self):
+        from src.experiments.experiment import split_questions
+        ids = [f'test{i}' for i in range(10)]
+        batches = split_questions(ids, n_workers=3)
+        self.assertEqual(len(batches), 3)
+        self.assertEqual(batches[0], ['test0', 'test3', 'test6', 'test9'])
+        self.assertEqual(batches[1], ['test1', 'test4', 'test7'])
+        self.assertEqual(batches[2], ['test2', 'test5', 'test8'])
+        self.assertEqual(sorted(qid for b in batches for qid in b), sorted(ids))
 
 
-def test_run_single_question_clean():
-    """Vanilla RAG, clean corpus, single question."""
-    print("\n=== test_run_single_question_clean ===")
-    questions = load_test_questions(TEST_QUERY_IDS)
-    config = ExperimentConfig(
-        experiment_id='test_vanilla_clean',
-        architecture='vanilla',
-        attack_type='clean',
-        k=10,
-    )
-    qa_system = create_qa_system(config)
-    result = run_single_question(config, questions['test0'], qa_system)
+# ===========================================================================
+# Integration suite — one class per scenario, declared in working order
+# ===========================================================================
 
-    print(f"  Question:  {result.question_text}")
-    print(f"  Answer:    {result.system_answer}")
-    print(f"  Correct:   {result.correct_answer}")
-    print(f"  Latency:   {result.latency_seconds:.2f}s")
-    print(f"  Error:     {result.error}")
-    print(f"  Retrieved: {result.retrieved_doc_ids}")
-    print(f"  Poison:    retrieved={result.poison_retrieved}  rank={result.poison_rank}")
-    print(f"  Gold:      ranks={result.gold_doc_ranks}  (expected gold_doc_ids={questions['test0'].get('gold_doc_ids')})")
-    print(f"  Metadata:  {result.metadata}")
+@pytest.mark.integration
+class VanillaCleanIntegrationTests(unittest.TestCase):
+    """Vanilla RAG against the clean corpus, single question."""
 
-    assert result.error is None, f"Unexpected error: {result.error}"
-    assert result.system_answer, "Empty answer"
-    assert len(result.retrieved_doc_ids) == 10, f"Expected 10 docs, got {len(result.retrieved_doc_ids)}"
-    assert result.poison_retrieved is None, "Clean run should have poison_retrieved=None"
-    assert result.poison_rank is None, "Clean run should have poison_rank=None"
-    assert isinstance(result.gold_doc_ranks, list), "gold_doc_ranks should be a list"
-    assert len(result.gold_doc_ranks) > 0, "test0 gold docs (doc0, doc1) should appear in top-10 clean retrieval"
-    assert all(1 <= r <= 10 for r in result.gold_doc_ranks), f"Gold ranks should be 1-10, got {result.gold_doc_ranks}"
-    assert result.metadata.get('passages_text_length', 0) > 0
-    print("  PASSED")
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.questions = _load_test_questions(TEST_QUERY_IDS)
 
+    def test_run_single_question(self):
+        from src.experiments.experiment import (
+            ExperimentConfig, create_qa_system, run_single_question,
+        )
+        config = ExperimentConfig(
+            experiment_id='test_vanilla_clean',
+            architecture='vanilla',
+            attack_type='clean',
+            k=10,
+        )
+        qa_system = create_qa_system(config)
+        result = run_single_question(config, self.questions['test0'], qa_system)
 
-def test_run_single_question_poisoned():
-    """Vanilla RAG, naive-poisoned corpus, single question."""
-    print("\n=== test_run_single_question_poisoned ===")
-    questions = load_test_questions(TEST_QUERY_IDS)
-    config = ExperimentConfig(
-        experiment_id='test_vanilla_naive',
-        architecture='vanilla',
-        attack_type='naive',
-        k=10,
-    )
-    qa_system = create_qa_system(config)
-    result = run_single_question(config, questions['test0'], qa_system)
-
-    print(f"  Question:  {result.question_text}")
-    print(f"  Answer:    {result.system_answer}")
-    print(f"  Correct:   {result.correct_answer}")
-    print(f"  Target:    {result.target_answer}")
-    print(f"  Latency:   {result.latency_seconds:.2f}s")
-    print(f"  Error:     {result.error}")
-    print(f"  Retrieved: {result.retrieved_doc_ids}")
-    print(f"  Poison:    retrieved={result.poison_retrieved}  rank={result.poison_rank}")
-    print(f"  Gold:      ranks={result.gold_doc_ranks}  (expected gold_doc_ids={questions['test0'].get('gold_doc_ids')})")
-    print(f"  Metadata:  {result.metadata}")
-
-    assert result.error is None, f"Unexpected error: {result.error}"
-    assert result.system_answer, "Empty answer"
-    assert result.poison_retrieved is not None, "Poisoned run should report poison_retrieved"
-    assert result.target_answer is not None, "Should have target_answer for poisoned run"
-    assert isinstance(result.gold_doc_ranks, list), "gold_doc_ranks should be a list"
-    # Gold docs may or may not appear in poisoned retrieval (poison displaces),
-    # but the field should always be populated as a list.
-    print("  PASSED")
+        self.assertIsNone(result.error)
+        self.assertTrue(result.system_answer)
+        self.assertEqual(len(result.retrieved_doc_ids), 10)
+        self.assertIsNone(result.poison_retrieved, "Clean run shouldn't have poison_retrieved set")
+        self.assertIsNone(result.poison_rank)
+        self.assertIsInstance(result.gold_doc_ranks, list)
+        self.assertGreater(
+            len(result.gold_doc_ranks), 0,
+            "test0 gold docs should appear in top-10 clean retrieval",
+        )
+        self.assertTrue(all(1 <= r <= 10 for r in result.gold_doc_ranks))
+        self.assertGreater(result.metadata.get('passages_text_length', 0), 0)
 
 
-def test_retrieval_capture_records():
-    """Verify RetrievalCapture actually intercepts the architecture's calls."""
-    print("\n=== test_retrieval_capture_records ===")
-    config = ExperimentConfig(
-        experiment_id='test_capture',
-        architecture='vanilla',
-        attack_type='clean',
-        k=10,
-    )
-    qa_system = create_qa_system(config)
+@pytest.mark.integration
+class VanillaNaiveIntegrationTests(unittest.TestCase):
+    """Vanilla RAG against the naive-poisoned corpus."""
 
-    with RetrievalCapture(qa_system.vector_store) as capture:
-        qa_system._run("what is non controlling interest on balance sheet", 'test0')
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.questions = _load_test_questions(TEST_QUERY_IDS)
 
-    print(f"  retrieve() calls: {len(capture.retrieve_calls)}")
-    print(f"  get_doc() calls:  {len(capture.doc_fetches)}")
-    assert len(capture.retrieve_calls) == 1, f"Vanilla should have exactly 1 retrieve call, got {len(capture.retrieve_calls)}"
-    results = capture.retrieve_calls[0]['results']
-    assert len(results) == 10, f"Expected 10 results for k=10, got {len(results)}"
-    print(f"  Top-10 doc_ids: {[d['doc_id'] for d in results]}")
-    # Vanilla doesn't call get_document_from_doc_id
-    assert len(capture.doc_fetches) == 0, f"Vanilla shouldn't fetch by ID, got {len(capture.doc_fetches)}"
-    print("  PASSED")
+    def test_run_single_question(self):
+        from src.experiments.experiment import (
+            ExperimentConfig, create_qa_system, run_single_question,
+        )
+        config = ExperimentConfig(
+            experiment_id='test_vanilla_naive',
+            architecture='vanilla',
+            attack_type='naive',
+            k=10,
+        )
+        qa_system = create_qa_system(config)
+        result = run_single_question(config, self.questions['test0'], qa_system)
+
+        self.assertIsNone(result.error)
+        self.assertTrue(result.system_answer)
+        self.assertIsNotNone(result.poison_retrieved)
+        self.assertIsNotNone(result.target_answer)
+        self.assertIsInstance(result.gold_doc_ranks, list)
 
 
-def test_run_single_question_agentic():
+@pytest.mark.integration
+class RetrievalCaptureIntegrationTests(unittest.TestCase):
+    """RetrievalCapture intercepts the architecture's vector-store calls."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        _data_present_or_skip()
+
+    def test_vanilla_records_one_retrieve_no_doc_fetches(self):
+        from src.experiments.experiment import (
+            ExperimentConfig, RetrievalCapture, create_qa_system,
+        )
+        config = ExperimentConfig(
+            experiment_id='test_capture',
+            architecture='vanilla',
+            attack_type='clean',
+            k=10,
+        )
+        qa_system = create_qa_system(config)
+
+        with RetrievalCapture(qa_system.vector_store) as capture:
+            qa_system._run("what is non controlling interest on balance sheet", 'test0')
+
+        self.assertEqual(len(capture.retrieve_calls), 1)
+        self.assertEqual(len(capture.retrieve_calls[0]['results']), 10)
+        # Vanilla doesn't fetch by ID.
+        self.assertEqual(len(capture.doc_fetches), 0)
+
+
+@pytest.mark.integration
+class AgenticCleanIntegrationTests(unittest.TestCase):
     """Agentic RAG, clean corpus, single question."""
-    print("\n=== test_run_single_question_agentic ===")
-    questions = load_test_questions(TEST_QUERY_IDS)
-    config = ExperimentConfig(
-        experiment_id='test_agentic_clean',
-        architecture='agentic',
-        attack_type='clean',
-        k=10,
-    )
-    qa_system = create_qa_system(config)
-    result = run_single_question(config, questions['test0'], qa_system)
 
-    print(f"  Question:  {result.question_text}")
-    print(f"  Answer:    {result.system_answer}")
-    print(f"  Latency:   {result.latency_seconds:.2f}s")
-    print(f"  Error:     {result.error}")
-    assert result.error is None, f"Unexpected error: {result.error}"
-    assert result.system_answer, "Empty answer"
-    print("  PASSED")
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.questions = _load_test_questions(TEST_QUERY_IDS)
+
+    def test_run_single_question(self):
+        from src.experiments.experiment import (
+            ExperimentConfig, create_qa_system, run_single_question,
+        )
+        config = ExperimentConfig(
+            experiment_id='test_agentic_clean',
+            architecture='agentic',
+            attack_type='clean',
+            k=10,
+        )
+        qa_system = create_qa_system(config)
+        result = run_single_question(config, self.questions['test0'], qa_system)
+
+        self.assertIsNone(result.error)
+        self.assertTrue(result.system_answer)
 
 
-def test_run_single_question_rlm():
+@pytest.mark.integration
+class RLMCleanIntegrationTests(unittest.TestCase):
     """RLM, clean corpus, single question.
 
-    Note: RLM uses a large topic-scoped context and may take 60-120s.
+    Note: RLM uses a large topic-scoped context and may take 60–120s.
     """
-    print("\n=== test_run_single_question_rlm ===")
-    questions = load_test_questions(TEST_QUERY_IDS)
-    config = ExperimentConfig(
-        experiment_id='test_rlm_clean',
-        architecture='rlm',
-        attack_type='clean',
-        k=None,
-    )
-    qa_system = create_qa_system(config)
-    result = run_single_question(config, questions['test0'], qa_system)
 
-    print(f"  Question:  {result.question_text}")
-    print(f"  Answer:    {result.system_answer}")
-    print(f"  Latency:   {result.latency_seconds:.2f}s")
-    print(f"  Error:     {result.error}")
-    assert result.error is None, f"Unexpected error: {result.error}"
-    assert result.system_answer, "Empty answer"
-    print("  PASSED")
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.questions = _load_test_questions(TEST_QUERY_IDS)
+
+    def test_run_single_question(self):
+        from src.experiments.experiment import (
+            ExperimentConfig, create_qa_system, run_single_question,
+        )
+        config = ExperimentConfig(
+            experiment_id='test_rlm_clean',
+            architecture='rlm',
+            attack_type='clean',
+            k=None,
+        )
+        qa_system = create_qa_system(config)
+        result = run_single_question(config, self.questions['test0'], qa_system)
+
+        self.assertIsNone(result.error)
+        self.assertTrue(result.system_answer)
 
 
-def test_run_single_question_madam():
+@pytest.mark.integration
+class MADAMCleanIntegrationTests(unittest.TestCase):
     """MADAM-RAG, clean corpus, single question."""
-    print("\n=== test_run_single_question_madam ===")
-    questions = load_test_questions(TEST_QUERY_IDS)
-    config = ExperimentConfig(
-        experiment_id='test_madam_clean',
-        architecture='madam',
-        attack_type='clean',
-        k=10,
-    )
-    qa_system = create_qa_system(config)
-    result = run_single_question(config, questions['test0'], qa_system)
 
-    print(f"  Question:  {result.question_text}")
-    print(f"  Answer:    {result.system_answer}")
-    print(f"  Latency:   {result.latency_seconds:.2f}s")
-    print(f"  Error:     {result.error}")
-    assert result.error is None, f"Unexpected error: {result.error}"
-    assert result.system_answer, "Empty answer"
-    print("  PASSED")
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.questions = _load_test_questions(TEST_QUERY_IDS)
+
+    def test_run_single_question(self):
+        from src.experiments.experiment import (
+            ExperimentConfig, create_qa_system, run_single_question,
+        )
+        config = ExperimentConfig(
+            experiment_id='test_madam_clean',
+            architecture='madam',
+            attack_type='clean',
+            k=10,
+        )
+        qa_system = create_qa_system(config)
+        result = run_single_question(config, self.questions['test0'], qa_system)
+
+        self.assertIsNone(result.error)
+        self.assertTrue(result.system_answer)
 
 
-def test_run_question_batch():
-    """run_question_batch with 3 questions, checkpointing."""
-    print("\n=== test_run_question_batch ===")
-    questions = load_test_questions(TEST_QUERY_IDS)
-    config = ExperimentConfig(
-        experiment_id='test_batch_vanilla_clean',
-        architecture='vanilla',
-        attack_type='clean',
-        k=10,
-    )
+@pytest.mark.integration
+class QuestionBatchIntegrationTests(unittest.TestCase):
+    """run_question_batch with checkpoint/resume across 3 questions."""
 
-    # Use a temp dir for results
-    tmp_dir = tempfile.mkdtemp(prefix='rag_test_')
-    try:
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.questions = _load_test_questions(TEST_QUERY_IDS)
+
+    def setUp(self):
+        super().setUp()
+        self.tmp_dir = tempfile.mkdtemp(prefix='rag_test_')
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp_dir, ignore_errors=True)
+        super().tearDown()
+
+    def test_batch_runs_then_skips_on_rerun(self):
+        from src.experiments.experiment import ExperimentConfig, run_question_batch
+
+        config = ExperimentConfig(
+            experiment_id='test_batch_vanilla_clean',
+            architecture='vanilla',
+            attack_type='clean',
+            k=10,
+        )
+
         summary = run_question_batch(
             config=config,
             question_ids=TEST_QUERY_IDS,
-            questions=questions,
-            results_dir=tmp_dir,
+            questions=self.questions,
+            results_dir=self.tmp_dir,
         )
-        print(f"  Summary: {summary}")
-        assert summary['completed'] == 3, f"Expected 3 completed, got {summary}"
-        assert summary['errors'] == 0, f"Unexpected errors: {summary}"
+        self.assertEqual(summary['completed'], 3)
+        self.assertEqual(summary['errors'], 0)
 
-        # Verify per-question files exist and are valid JSON
-        exp_dir = os.path.join(tmp_dir, config.experiment_id)
+        exp_dir = os.path.join(self.tmp_dir, config.experiment_id)
         for qid in TEST_QUERY_IDS:
             path = os.path.join(exp_dir, f'{qid}.json')
-            assert os.path.exists(path), f"Missing result file: {path}"
+            self.assertTrue(os.path.exists(path))
             with open(path) as f:
                 data = json.load(f)
-            assert data['question_id'] == qid
-            assert data['system_answer'], f"Empty answer for {qid}"
-            assert 'gold_doc_ranks' in data, f"Missing gold_doc_ranks in {qid} result JSON"
-            assert isinstance(data['gold_doc_ranks'], list), f"gold_doc_ranks should be list for {qid}"
-            print(f"  {qid}: answer={data['system_answer'][:60]}...  gold_ranks={data['gold_doc_ranks']}")
+            self.assertEqual(data['question_id'], qid)
+            self.assertTrue(data['system_answer'])
+            self.assertIn('gold_doc_ranks', data)
+            self.assertIsInstance(data['gold_doc_ranks'], list)
 
-        # Re-run: all should be skipped (checkpoint recovery)
+        # Second run should skip everything (checkpoint recovery).
         summary2 = run_question_batch(
             config=config,
             question_ids=TEST_QUERY_IDS,
-            questions=questions,
-            results_dir=tmp_dir,
+            questions=self.questions,
+            results_dir=self.tmp_dir,
         )
-        print(f"  Re-run summary: {summary2}")
-        assert summary2['skipped'] == 3, f"Expected 3 skipped on re-run, got {summary2}"
-        assert summary2['completed'] == 0
-        print("  PASSED")
-    finally:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
-
-
-
-def test_split_questions():
-    """Verify round-robin splitting."""
-    print("\n=== test_split_questions ===")
-    ids = [f'test{i}' for i in range(10)]
-    batches = split_questions(ids, n_workers=3)
-    assert len(batches) == 3
-    assert batches[0] == ['test0', 'test3', 'test6', 'test9']
-    assert batches[1] == ['test1', 'test4', 'test7']
-    assert batches[2] == ['test2', 'test5', 'test8']
-    # All IDs accounted for
-    flat = [qid for b in batches for qid in b]
-    assert sorted(flat) == sorted(ids)
-    print(f"  Batches: {[len(b) for b in batches]}")
-    print("  PASSED")
-
-
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
-
-if __name__ == '__main__':
-    test_split_questions()
-    test_retrieval_capture_records()
-    test_run_single_question_clean()
-    test_run_single_question_poisoned()
-    test_run_single_question_agentic()
-    test_run_single_question_rlm()
-    test_run_single_question_madam()
-    test_run_question_batch()
-    print("\n=== ALL TESTS PASSED ===")
-    os._exit(0)  # Skip slow GC of FAISS indexes
+        self.assertEqual(summary2['skipped'], 3)
+        self.assertEqual(summary2['completed'], 0)
