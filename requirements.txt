@@ -25,3 +25,15 @@ matplotlib
 
 # Utilities
 python-dotenv
+timeout-decorator
+nltk
+
+# Analysis
+jupyter
+nbconvert
+pandas
+pyarrow
+tiktoken
+logfire
+seaborn
+scipy

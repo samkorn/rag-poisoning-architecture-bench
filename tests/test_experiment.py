@@ -154,6 +154,75 @@ def test_retrieval_capture_records():
     print("  PASSED")
 
 
+def test_run_single_question_agentic():
+    """Agentic RAG, clean corpus, single question."""
+    print("\n=== test_run_single_question_agentic ===")
+    questions = load_test_questions(TEST_QUERY_IDS)
+    config = ExperimentConfig(
+        experiment_id='test_agentic_clean',
+        architecture='agentic',
+        attack_type='clean',
+        k=10,
+    )
+    qa_system = create_qa_system(config)
+    result = run_single_question(config, questions['test0'], qa_system)
+
+    print(f"  Question:  {result.question_text}")
+    print(f"  Answer:    {result.system_answer}")
+    print(f"  Latency:   {result.latency_seconds:.2f}s")
+    print(f"  Error:     {result.error}")
+    assert result.error is None, f"Unexpected error: {result.error}"
+    assert result.system_answer, "Empty answer"
+    print("  PASSED")
+
+
+def test_run_single_question_rlm():
+    """RLM, clean corpus, single question.
+
+    Note: RLM uses a large topic-scoped context and may take 60-120s.
+    """
+    print("\n=== test_run_single_question_rlm ===")
+    questions = load_test_questions(TEST_QUERY_IDS)
+    config = ExperimentConfig(
+        experiment_id='test_rlm_clean',
+        architecture='rlm',
+        attack_type='clean',
+        k=None,
+    )
+    qa_system = create_qa_system(config)
+    result = run_single_question(config, questions['test0'], qa_system)
+
+    print(f"  Question:  {result.question_text}")
+    print(f"  Answer:    {result.system_answer}")
+    print(f"  Latency:   {result.latency_seconds:.2f}s")
+    print(f"  Error:     {result.error}")
+    assert result.error is None, f"Unexpected error: {result.error}"
+    assert result.system_answer, "Empty answer"
+    print("  PASSED")
+
+
+def test_run_single_question_madam():
+    """MADAM-RAG, clean corpus, single question."""
+    print("\n=== test_run_single_question_madam ===")
+    questions = load_test_questions(TEST_QUERY_IDS)
+    config = ExperimentConfig(
+        experiment_id='test_madam_clean',
+        architecture='madam',
+        attack_type='clean',
+        k=10,
+    )
+    qa_system = create_qa_system(config)
+    result = run_single_question(config, questions['test0'], qa_system)
+
+    print(f"  Question:  {result.question_text}")
+    print(f"  Answer:    {result.system_answer}")
+    print(f"  Latency:   {result.latency_seconds:.2f}s")
+    print(f"  Error:     {result.error}")
+    assert result.error is None, f"Unexpected error: {result.error}"
+    assert result.system_answer, "Empty answer"
+    print("  PASSED")
+
+
 def test_run_question_batch():
     """run_question_batch with 3 questions, checkpointing."""
     print("\n=== test_run_question_batch ===")
@@ -232,6 +301,9 @@ if __name__ == '__main__':
     test_retrieval_capture_records()
     test_run_single_question_clean()
     test_run_single_question_poisoned()
+    test_run_single_question_agentic()
+    test_run_single_question_rlm()
+    test_run_single_question_madam()
     test_run_question_batch()
     print("\n=== ALL TESTS PASSED ===")
     os._exit(0)  # Skip slow GC of FAISS indexes

@@ -4,10 +4,13 @@ import time
 from typing import Optional
 from dataclasses import dataclass
 
+from openai import AsyncOpenAI
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.models.openai import OpenAIResponsesModel, OpenAIResponsesModelSettings
+from pydantic_ai.providers.openai import OpenAIProvider
 
 from src.architectures.qa_system import QASystem
+from src.architectures.utils import _LLM_CALL_TIMEOUT_SECONDS
 from src.embeddings.vector_store import VectorStore
 
 
@@ -81,7 +84,12 @@ class AgenticRAG(QASystem):
             **kwargs
         )
         self.vector_store = VectorStore(self.corpus_type)
-        self.model = OpenAIResponsesModel(self.model_id)
+        # HTTP-level timeout on a pre-constructed AsyncOpenAI; SDK-default
+        # max_retries (2) is fine since no tenacity wrapper surrounds
+        # agent.run_sync.
+        self.openai_client = AsyncOpenAI(timeout=_LLM_CALL_TIMEOUT_SECONDS)
+        self.provider = OpenAIProvider(openai_client=self.openai_client)
+        self.model = OpenAIResponsesModel(self.model_id, provider=self.provider)
         if self.reasoning_effort or self.reasoning_summary:
             self.model_settings = OpenAIResponsesModelSettings(
                 openai_reasoning_effort=self.reasoning_effort,

@@ -174,7 +174,6 @@ def judge_response(
         user_prompt=user_message,
         temperature=1.0,
         response_format=JudgeResult,
-        use_signals=True,
         truncation='auto',
     )
 
