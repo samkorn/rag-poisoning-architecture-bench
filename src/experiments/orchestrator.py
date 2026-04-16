@@ -84,17 +84,13 @@ image = (
         "AutoModel.from_pretrained('facebook/contriever')"
         "\""
     )
-    # Ensure /app is on PYTHONPATH so `from src.X.Y import Z` works at import time.
-    .env({'PYTHONPATH': '/app'})
-    # Mount project Python code into /app/src/ so `from src.X.Y import Z` works.
-    .add_local_file('src/__init__.py', remote_path='/app/src/__init__.py')
-    .add_local_dir('src/architectures/', remote_path='/app/src/architectures/')
-    .add_local_dir('src/embeddings/', remote_path='/app/src/embeddings/')
-    .add_local_dir('src/experiments/', remote_path='/app/src/experiments/')
-    # data/ — Python modules only, NOT the multi-GB data files.
-    # The heavy data subdirectories (vector-store/, original-datasets/, etc.)
-    # are symlinked from the Volume at container startup (see setup_container).
-    .add_local_dir('src/data/', remote_path='/app/src/data/')
+    # Mount the src package into /root/src/ (Modal's default PYTHONPATH).
+    # This makes `from src.X.Y import Z` work at import time without
+    # custom PYTHONPATH or sys.path hacks.
+    # Note: data/ Python modules are included, but the heavy data subdirs
+    # (vector-store/, original-datasets/, etc.) are symlinked from the
+    # Volume at container startup (see setup_container).
+    .add_local_python_source('src')
 )
 
 # --- Volume ---------------------------------------------------------------
@@ -119,39 +115,25 @@ secrets = [
 # ---------------------------------------------------------------------------
 
 def setup_container():
-    """Prepare sys.path and data symlinks inside a Modal container.
+    """Create data symlinks inside a Modal container.
 
     Called at the top of every worker / orchestrator function.
 
-    VectorStore (in /app/src/embeddings/vector_store.py) resolves data paths
-    relative to its own __file__:
-        VECTOR_STORE_DIR = <__file__>/../../data/vector-store  ->  /app/src/data/vector-store
-        _DATA_BASE       = <__file__>/../../data               ->  /app/src/data
-
-    data/utils.py resolves paths from its own __file__:
-        _DATA_BASE = os.path.dirname(__file__)                 ->  /app/src/data
-
-    So we symlink the Volume's data subdirectories into /app/src/data/ where
-    the code expects them.  The Python modules (baked into the image) coexist
-    with these symlinks in the same directory.
+    The src package is mounted at /root/src/ via add_local_python_source.
+    VectorStore and data/utils.py resolve paths relative to their own __file__,
+    so they look for data at /root/src/data/vector-store, etc. We symlink the
+    Volume's data subdirectories there.
     """
-    import sys
-
-    if '/app' not in sys.path:
-        sys.path.insert(0, '/app')
-
-    # Symlink heavy data directories from Volume into wherever src/data/ lives.
-    # Modal may mount code at /app/src/ (via image.add_local_dir) or /root/src/
-    # (via auto-mount from test files), so create symlinks in both locations.
-    data_dirs = ['/app/src/data', '/root/src/data']
-    for data_dir in data_dirs:
-        if not os.path.isdir(data_dir):
-            continue
-        for subdir in ('vector-store', 'original-datasets', 'experiment-datasets'):
-            link = os.path.join(data_dir, subdir)
-            target = f'{VOLUME_MOUNT}/{subdir}'
-            if os.path.exists(target) and not os.path.exists(link):
-                os.symlink(target, link)
+    # Symlink heavy data directories from Volume into /root/src/data/
+    # (where add_local_python_source mounts the src package).
+    symlinks = {
+        '/root/src/data/vector-store': f'{VOLUME_MOUNT}/vector-store',
+        '/root/src/data/original-datasets': f'{VOLUME_MOUNT}/original-datasets',
+        '/root/src/data/experiment-datasets': f'{VOLUME_MOUNT}/experiment-datasets',
+    }
+    for link, target in symlinks.items():
+        if os.path.exists(target) and not os.path.exists(link):
+            os.symlink(target, link)
 
 
 # ---------------------------------------------------------------------------
