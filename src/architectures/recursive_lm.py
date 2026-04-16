@@ -5,6 +5,7 @@ import time
 from rlm import RLM as RLMClass
 
 from src.architectures.qa_system import QASystem, STANDARD_PROMPT
+from src.architectures.utils import _LLM_CALL_TIMEOUT_SECONDS
 from src.embeddings.vector_store import VectorStore
 from src.data.utils import (
     get_query_id_from_question,
@@ -30,9 +31,15 @@ class RLM(QASystem):
         # subsequent calls return the cached dict instantly
         load_title_to_doc_ids_map(self.corpus_type)
         self.vector_store = VectorStore(self.corpus_type)
+        # timeout flows through rlm -> OpenAIClient -> BaseLM -> openai.OpenAI.
+        # No tenacity wrapper surrounds rlm.completion(), so SDK-default
+        # max_retries (2) is fine — leaves transient 429/5xx protection.
         self.rlm = RLMClass(
             backend='openai',
-            backend_kwargs={'model_name': self.model_id},
+            backend_kwargs={
+                'model_name': self.model_id,
+                'timeout': _LLM_CALL_TIMEOUT_SECONDS,
+            },
             verbose=verbose
         )
 

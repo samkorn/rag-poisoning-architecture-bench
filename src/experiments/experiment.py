@@ -287,7 +287,13 @@ def _run_single_question(
     qa_system,
     log_tag: str,
 ) -> QuestionResult:
-    """Inner execution: run one question with retry + timeout.
+    """Inner execution: run one question.
+
+    Per-question outer timeout enforced by the module-level
+    ``_run_single_question_retry_{signal,thread}_timed`` wrappers (10 min,
+    auto-dispatched by thread context). Per-LLM-call timeout is configured on
+    the OpenAI client itself (see ``_LLM_CALL_TIMEOUT_SECONDS`` in
+    ``src/architectures/utils.py``), not via decorator.
 
     Raises on failure — caller (run_single_question) catches and records errors.
     """
@@ -417,7 +423,10 @@ def run_single_question(
 ) -> QuestionResult:
     """Execute one question through the configured architecture.
 
-    Delegates to _run_single_question (which has retry + timeout).
+    Delegates to ``_run_single_question`` via a retry+timeout wrapper
+    (per-question 10-min ceiling, auto-dispatched signal/multiproc by
+    thread). Per-LLM-call HTTP timeout is configured on the OpenAI client
+    (see ``src/architectures/utils.py``).
     **Never raises** — all errors are captured in QuestionResult.error so
     that one bad question cannot crash the worker or lose batch progress.
     """
