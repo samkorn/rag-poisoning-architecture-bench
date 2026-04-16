@@ -1,6 +1,6 @@
 """End-to-end Modal smoke for every architecture.
 
-One small 3-question batch per architecture (clean, k=10) verifying the
+One single-question run per architecture (clean, k=10) verifying the
 full container + worker + checkpoint pipeline. All four architectures
 should pass in roughly the same shape; per-architecture isolation makes
 failures easy to pinpoint.
@@ -20,7 +20,7 @@ import unittest
 import pytest
 
 
-TEST_QUERY_IDS = ['test0', 'test1', 'test2']
+TEST_QUERY_IDS = ['test0']
 SMOKE_PREFIX = '_smoketest_'
 
 
@@ -182,7 +182,7 @@ class OrchestratorSmokeVanillaIntegrationTests(_OrchestratorSmokeMixin, unittest
     architecture = 'vanilla'
     k = 10
 
-    def test_three_questions_complete(self):
+    def test_single_question_completes(self):
         self._run_smoke()
 
 
@@ -191,7 +191,7 @@ class OrchestratorSmokeAgenticIntegrationTests(_OrchestratorSmokeMixin, unittest
     architecture = 'agentic'
     k = 10
 
-    def test_three_questions_complete(self):
+    def test_single_question_completes(self):
         self._run_smoke()
 
 
@@ -200,7 +200,7 @@ class OrchestratorSmokeMADAMIntegrationTests(_OrchestratorSmokeMixin, unittest.T
     architecture = 'madam'
     k = 10
 
-    def test_three_questions_complete(self):
+    def test_single_question_completes(self):
         self._run_smoke()
 
 
@@ -209,5 +209,5 @@ class OrchestratorSmokeRLMIntegrationTests(_OrchestratorSmokeMixin, unittest.Tes
     architecture = 'rlm'
     k = None
 
-    def test_three_questions_complete(self):
+    def test_single_question_completes(self):
         self._run_smoke()

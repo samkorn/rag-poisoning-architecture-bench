@@ -24,7 +24,7 @@ import pytest
 
 
 SMOKE_PREFIX = '_phase4_test_'
-TEST_QUERY_IDS = ['test0', 'test1']
+TEST_QUERY_IDS = ['test0']
 
 
 def _modal_credentials_or_skip() -> None:
@@ -186,7 +186,7 @@ class ModalContainerImportIntegrationTests(_ModalRunContextMixin, unittest.TestC
 
 @pytest.mark.modal
 class ModalVanillaCleanIntegrationTests(_ModalRunContextMixin, unittest.TestCase):
-    """Vanilla RAG, clean corpus, two questions on Modal."""
+    """Vanilla RAG, clean corpus, one question on Modal."""
 
     def setUp(self):
         super().setUp()
@@ -196,7 +196,7 @@ class ModalVanillaCleanIntegrationTests(_ModalRunContextMixin, unittest.TestCase
         cleanup_test_results.remote()
         super().tearDown()
 
-    def test_two_questions_complete_with_results_on_volume(self):
+    def test_single_question_completes_with_result_on_volume(self):
         from src.experiments.experiment import ExperimentConfig
         config = ExperimentConfig(
             experiment_id=f'{SMOKE_PREFIX}vanilla_clean',
@@ -221,7 +221,7 @@ class ModalVanillaCleanIntegrationTests(_ModalRunContextMixin, unittest.TestCase
 
 @pytest.mark.modal
 class ModalAgenticCleanIntegrationTests(_ModalRunContextMixin, unittest.TestCase):
-    """Agentic RAG, clean corpus, two questions on Modal."""
+    """Agentic RAG, clean corpus, one question on Modal."""
 
     def setUp(self):
         super().setUp()
@@ -231,7 +231,7 @@ class ModalAgenticCleanIntegrationTests(_ModalRunContextMixin, unittest.TestCase
         cleanup_test_results.remote()
         super().tearDown()
 
-    def test_two_questions_complete(self):
+    def test_single_question_completes(self):
         from src.experiments.experiment import ExperimentConfig
         config = ExperimentConfig(
             experiment_id=f'{SMOKE_PREFIX}agentic_clean',

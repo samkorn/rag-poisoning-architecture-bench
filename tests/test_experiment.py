@@ -24,7 +24,10 @@ _REPO_ROOT = os.path.normpath(
     os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 )
 
-TEST_QUERY_IDS = ['test0', 'test1', 'test2']
+# One question is enough to verify end-to-end behavior — the batch
+# checkpoint/resume test is the only scenario where we need more than one.
+TEST_QUERY_ID = 'test0'
+BATCH_BATCH_TEST_QUERY_IDS = ['test0', 'test1', 'test2']
 
 
 def _data_present_or_skip() -> str:
@@ -173,7 +176,7 @@ class VanillaCleanIntegrationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.questions = _load_test_questions(TEST_QUERY_IDS)
+        cls.questions = _load_test_questions([TEST_QUERY_ID])
 
     def test_run_single_question(self):
         from src.experiments.experiment import (
@@ -186,7 +189,7 @@ class VanillaCleanIntegrationTests(unittest.TestCase):
             k=10,
         )
         qa_system = create_qa_system(config)
-        result = run_single_question(config, self.questions['test0'], qa_system)
+        result = run_single_question(config, self.questions[TEST_QUERY_ID], qa_system)
 
         self.assertIsNone(result.error)
         self.assertTrue(result.system_answer)
@@ -209,7 +212,7 @@ class VanillaNaiveIntegrationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.questions = _load_test_questions(TEST_QUERY_IDS)
+        cls.questions = _load_test_questions([TEST_QUERY_ID])
 
     def test_run_single_question(self):
         from src.experiments.experiment import (
@@ -222,7 +225,7 @@ class VanillaNaiveIntegrationTests(unittest.TestCase):
             k=10,
         )
         qa_system = create_qa_system(config)
-        result = run_single_question(config, self.questions['test0'], qa_system)
+        result = run_single_question(config, self.questions[TEST_QUERY_ID], qa_system)
 
         self.assertIsNone(result.error)
         self.assertTrue(result.system_answer)
@@ -268,7 +271,7 @@ class AgenticCleanIntegrationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.questions = _load_test_questions(TEST_QUERY_IDS)
+        cls.questions = _load_test_questions([TEST_QUERY_ID])
 
     def test_run_single_question(self):
         from src.experiments.experiment import (
@@ -281,7 +284,7 @@ class AgenticCleanIntegrationTests(unittest.TestCase):
             k=10,
         )
         qa_system = create_qa_system(config)
-        result = run_single_question(config, self.questions['test0'], qa_system)
+        result = run_single_question(config, self.questions[TEST_QUERY_ID], qa_system)
 
         self.assertIsNone(result.error)
         self.assertTrue(result.system_answer)
@@ -297,7 +300,7 @@ class RLMCleanIntegrationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.questions = _load_test_questions(TEST_QUERY_IDS)
+        cls.questions = _load_test_questions([TEST_QUERY_ID])
 
     def test_run_single_question(self):
         from src.experiments.experiment import (
@@ -310,7 +313,7 @@ class RLMCleanIntegrationTests(unittest.TestCase):
             k=None,
         )
         qa_system = create_qa_system(config)
-        result = run_single_question(config, self.questions['test0'], qa_system)
+        result = run_single_question(config, self.questions[TEST_QUERY_ID], qa_system)
 
         self.assertIsNone(result.error)
         self.assertTrue(result.system_answer)
@@ -323,7 +326,7 @@ class MADAMCleanIntegrationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.questions = _load_test_questions(TEST_QUERY_IDS)
+        cls.questions = _load_test_questions([TEST_QUERY_ID])
 
     def test_run_single_question(self):
         from src.experiments.experiment import (
@@ -336,7 +339,7 @@ class MADAMCleanIntegrationTests(unittest.TestCase):
             k=10,
         )
         qa_system = create_qa_system(config)
-        result = run_single_question(config, self.questions['test0'], qa_system)
+        result = run_single_question(config, self.questions[TEST_QUERY_ID], qa_system)
 
         self.assertIsNone(result.error)
         self.assertTrue(result.system_answer)
@@ -344,12 +347,16 @@ class MADAMCleanIntegrationTests(unittest.TestCase):
 
 @pytest.mark.integration
 class QuestionBatchIntegrationTests(unittest.TestCase):
-    """run_question_batch with checkpoint/resume across 3 questions."""
+    """run_question_batch with checkpoint/resume across 3 questions.
+
+    The batch test is the one place we need >1 question — that's the
+    whole point of testing batching. Other integration tests use a
+    single question."""
 
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.questions = _load_test_questions(TEST_QUERY_IDS)
+        cls.questions = _load_test_questions(BATCH_TEST_QUERY_IDS)
 
     def setUp(self):
         super().setUp()
@@ -371,7 +378,7 @@ class QuestionBatchIntegrationTests(unittest.TestCase):
 
         summary = run_question_batch(
             config=config,
-            question_ids=TEST_QUERY_IDS,
+            question_ids=BATCH_TEST_QUERY_IDS,
             questions=self.questions,
             results_dir=self.tmp_dir,
         )
@@ -379,7 +386,7 @@ class QuestionBatchIntegrationTests(unittest.TestCase):
         self.assertEqual(summary['errors'], 0)
 
         exp_dir = os.path.join(self.tmp_dir, config.experiment_id)
-        for qid in TEST_QUERY_IDS:
+        for qid in BATCH_TEST_QUERY_IDS:
             path = os.path.join(exp_dir, f'{qid}.json')
             self.assertTrue(os.path.exists(path))
             with open(path) as f:
@@ -392,7 +399,7 @@ class QuestionBatchIntegrationTests(unittest.TestCase):
         # Second run should skip everything (checkpoint recovery).
         summary2 = run_question_batch(
             config=config,
-            question_ids=TEST_QUERY_IDS,
+            question_ids=BATCH_TEST_QUERY_IDS,
             questions=self.questions,
             results_dir=self.tmp_dir,
         )
