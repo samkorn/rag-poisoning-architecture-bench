@@ -11,8 +11,7 @@ script under exercise — for two reasons:
    state collisions, and pytest collects classes in file declaration order
    so the working ordering is preserved.
 
-Skip cleanly when the data symlinks aren't in place. See
-``scripts/setup_test_symlinks.sh`` (in the parent project).
+Skip cleanly when the prerequisite data isn't on disk.
 """
 
 import json
@@ -41,8 +40,8 @@ def _data_present_or_skip() -> None:
     if not os.path.exists(sentinel):
         raise unittest.SkipTest(
             f"Integration test requires {sentinel}. "
-            f"Run scripts/setup_test_symlinks.sh (local dev) or "
-            f"scripts/download_data.sh (once Phase 5 lands)."
+            f"Either run scripts/download_data.sh to fetch the published dataset, "
+            f"or regenerate the data by running the experiment pipeline."
         )
 
 

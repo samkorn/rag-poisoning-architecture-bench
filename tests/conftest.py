@@ -9,7 +9,7 @@ doesn't warn, and so test runs can be sliced via `pytest -m`:
     pytest                                      # everything
 
 Integration and Modal classes are responsible for skipping themselves in
-``setUpClass`` if their prerequisites (data symlinks, Modal credentials,
+``setUpClass`` if their prerequisites (data on disk, Modal credentials,
 OpenAI key) aren't available — see e.g. ``test_experiment.py``.
 """
 
@@ -19,8 +19,8 @@ import pytest
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line(
         "markers",
-        "integration: requires local data on disk (workspace symlinks or "
-        "downloaded results) and an OpenAI API key.",
+        "integration: requires the dataset on disk (downloaded or "
+        "regenerated locally) and an OpenAI API key.",
     )
     config.addinivalue_line(
         "markers",

@@ -29,8 +29,8 @@ def _data_present_or_skip(sentinel: str) -> None:
     if not os.path.exists(sentinel):
         raise unittest.SkipTest(
             f"Integration test requires {sentinel}. "
-            f"Run scripts/setup_test_symlinks.sh (local dev) or "
-            f"scripts/download_data.sh (once Phase 5 lands)."
+            f"Either run scripts/download_data.sh to fetch the published dataset, "
+            f"or regenerate the data by running the experiment pipeline."
         )
 
 

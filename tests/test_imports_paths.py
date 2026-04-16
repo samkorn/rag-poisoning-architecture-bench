@@ -6,8 +6,7 @@ Two suites:
   *not* perform import-time IO. Runs in the unit suite (no data).
 * :class:`ModulePathsIntegrationTests` — imports every module under
   ``src/`` and verifies the path constants they expose actually resolve
-  to files/dirs on disk. Requires the data symlinks (or a downloaded
-  data bundle).
+  to files/dirs on disk. Requires the dataset to be present locally.
 
 Note on import-time IO: ``src.data.utils`` calls
 ``_load_noise_question_ids()`` at import time, so any module that
@@ -95,8 +94,8 @@ class ModulePathsIntegrationTests(unittest.TestCase):
         if not os.path.isdir(noise_dir):
             raise unittest.SkipTest(
                 f"Integration tests require noise results at {noise_dir}. "
-                f"Run scripts/setup_test_symlinks.sh (local dev) or "
-                f"scripts/download_data.sh (once Phase 5 lands)."
+                f"Either run scripts/download_data.sh to fetch the published dataset, "
+                f"or regenerate the data by running the experiment pipeline."
             )
         cls.repo_root = repo_root
 

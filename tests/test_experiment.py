@@ -35,8 +35,8 @@ def _data_present_or_skip() -> str:
     if not os.path.exists(questions_path):
         raise unittest.SkipTest(
             f"Integration test requires {questions_path}. "
-            f"Run scripts/setup_test_symlinks.sh (local dev) or "
-            f"scripts/download_data.sh (once Phase 5 lands)."
+            f"Either run scripts/download_data.sh to fetch the published dataset, "
+            f"or regenerate the data by running the experiment pipeline."
         )
     return questions_path
 

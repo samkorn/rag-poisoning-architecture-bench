@@ -4,11 +4,13 @@
   and verify it parses (catches accidental JSON corruption). No data,
   no execution.
 * :class:`NotebookExecutionIntegrationTests` — execute the notebook end
-  to end via nbconvert; verify figures and parquet are produced.
+  to end via nbconvert; verify every figure the paper references is
+  produced and the merged-results parquet is written.
 * :class:`PaperCompilationIntegrationTests` — two-pass pdflatex.
 """
 
 import os
+import re
 import subprocess
 import tempfile
 import unittest
@@ -23,6 +25,23 @@ _ANALYSIS_DIR = os.path.join(_REPO_ROOT, 'analysis')
 _PAPER_DIR = os.path.join(_REPO_ROOT, 'paper')
 _VENV_BIN = os.path.join(_REPO_ROOT, 'venv', 'bin')
 _PDFLATEX = '/Library/TeX/texbin/pdflatex'
+
+
+def _missing_data_skip_message(path: str) -> str:
+    return (
+        f"Integration test requires {path}. "
+        f"Either run scripts/download_data.sh to fetch the published dataset, "
+        f"or regenerate the data by running the experiment pipeline."
+    )
+
+
+def _paper_figure_filenames() -> list[str]:
+    """Parse paper_draft_working.tex for every \\includegraphics target."""
+    tex_path = os.path.join(_PAPER_DIR, 'paper_draft_working.tex')
+    with open(tex_path) as f:
+        tex = f.read()
+    # \includegraphics[...]{filename.pdf}
+    return sorted(set(re.findall(r'\\includegraphics(?:\[[^\]]*\])?\{([^}]+)\}', tex)))
 
 
 # ===========================================================================
@@ -41,10 +60,8 @@ class NotebookValidityUnitTests(unittest.TestCase):
         with open(notebook_path) as f:
             nb = nbformat.read(f, as_version=4)
 
-        # nbformat will raise ValidationError if the notebook is malformed.
+        # Raises nbformat.ValidationError if the notebook is malformed.
         nbformat.validate(nb)
-
-        # Sanity: should have at least a few cells.
         self.assertGreater(len(nb.cells), 5)
 
 
@@ -62,13 +79,21 @@ class NotebookExecutionIntegrationTests(unittest.TestCase):
         notebook_path = os.path.join(_ANALYSIS_DIR, 'analysis.ipynb')
         if not os.path.exists(notebook_path):
             raise unittest.SkipTest(f"Missing notebook: {notebook_path}")
-        human_labels = os.path.join(_ANALYSIS_DIR, 'human_labels.csv')
-        if not os.path.exists(human_labels):
-            raise unittest.SkipTest(
-                f"Missing {human_labels}. "
-                f"Run scripts/setup_test_symlinks.sh (local dev) or "
-                f"scripts/download_data.sh (once Phase 5 lands)."
-            )
+
+        # Notebook reads from these paths (see analysis.ipynb).
+        required = [
+            os.path.join(_ANALYSIS_DIR, 'human_labels.csv'),
+            os.path.join(_REPO_ROOT, 'src', 'experiments', 'results'),
+            os.path.join(_REPO_ROOT, 'src', 'experiments', 'results', 'experiments'),
+            os.path.join(_REPO_ROOT, 'src', 'experiments', 'results', 'noise'),
+            os.path.join(_REPO_ROOT, 'src', 'data', 'original-datasets', 'nq', 'corpus.jsonl'),
+            os.path.join(_REPO_ROOT, 'src', 'data', 'original-datasets', 'nq', 'qrels', 'test.tsv'),
+            os.path.join(_REPO_ROOT, 'src', 'data', 'experiment-datasets', 'nq-corruptrag-ak-poisoned-docs.jsonl'),
+            os.path.join(_REPO_ROOT, 'src', 'data', 'experiment-datasets', 'nq-incorrect-answers-poisoned-docs.jsonl'),
+        ]
+        for path in required:
+            if not os.path.exists(path):
+                raise unittest.SkipTest(_missing_data_skip_message(path))
         cls.notebook_path = notebook_path
 
     def test_notebook_executes_and_produces_outputs(self):
@@ -100,15 +125,19 @@ class NotebookExecutionIntegrationTests(unittest.TestCase):
                 f"Notebook execution failed: {result.stderr[-500:]}",
             )
 
+            # Every \includegraphics target in the paper must exist on disk.
             figures_dir = os.path.join(_ANALYSIS_DIR, 'figures')
-            generated = os.listdir(figures_dir) if os.path.isdir(figures_dir) else []
-            for fig in (
-                'accuracy_fullcond.pdf',
-                'asr_fullcond.pdf',
-                'detection_heatmap.pdf',
-                'safety_profile.pdf',
-            ):
-                self.assertIn(fig, generated, f"Missing expected figure: {fig}")
+            self.assertTrue(os.path.isdir(figures_dir), figures_dir)
+            generated = set(os.listdir(figures_dir))
+
+            expected = _paper_figure_filenames()
+            self.assertGreater(len(expected), 5, "no figures parsed from paper.tex")
+
+            missing = [f for f in expected if f not in generated]
+            self.assertFalse(
+                missing,
+                f"Notebook didn't produce {len(missing)} paper-referenced figure(s): {missing}",
+            )
 
             parquet_path = os.path.join(_ANALYSIS_DIR, 'intermediate', 'merged_results.parquet')
             self.assertTrue(os.path.exists(parquet_path), parquet_path)
@@ -129,21 +158,25 @@ class PaperCompilationIntegrationTests(unittest.TestCase):
             raise unittest.SkipTest(f"Missing TeX source: {tex_file}")
         if not os.path.exists(_PDFLATEX):
             raise unittest.SkipTest(f"pdflatex not installed at {_PDFLATEX}")
+
+        # Paper uses \graphicspath{{../analysis/figures/}}; every figure it
+        # references must be on disk before the compile can succeed.
+        figures_dir = os.path.join(_ANALYSIS_DIR, 'figures')
+        if not os.path.isdir(figures_dir):
+            raise unittest.SkipTest(_missing_data_skip_message(figures_dir))
+
+        generated = set(os.listdir(figures_dir))
+        missing = [f for f in _paper_figure_filenames() if f not in generated]
+        if missing:
+            raise unittest.SkipTest(
+                _missing_data_skip_message(
+                    f"{figures_dir} (missing: {missing[:3]}{'...' if len(missing) > 3 else ''})"
+                )
+            )
+
         cls.tex_file = tex_file
 
     def test_paper_compiles_and_produces_pdf(self):
-        # The paper uses \graphicspath{{../analysis/figures/}}; if the
-        # figures dir is missing or empty, skip with a hint.
-        figures_dir = os.path.join(_ANALYSIS_DIR, 'figures')
-        if not os.path.isdir(figures_dir) or len(
-            [f for f in os.listdir(figures_dir) if f.endswith('.pdf')]
-        ) == 0:
-            self.skipTest(
-                f"No figures in {figures_dir}. Run the notebook test first "
-                f"or symlink workspace figures via "
-                f"scripts/setup_test_symlinks.sh."
-            )
-
         for pass_num in (1, 2):
             result = subprocess.run(
                 [_PDFLATEX, '-interaction=nonstopmode', os.path.basename(self.tex_file)],
