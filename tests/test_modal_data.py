@@ -1,43 +1,76 @@
-"""
-Phase 4 migration test: verify Modal data scripts and experiment pipeline.
+"""Modal data-availability + small live experiment runs.
 
-Requires Modal credentials, OpenAI API key, and branch pushed to GitHub.
-Tests progress from dry-run (no API cost) to small live batches.
+These tests open an ``app.run()`` context from inside the test process and
+call deployed Modal functions via ``.remote()``. They require Modal
+credentials (~/.modal.toml) and an OpenAI key on the deployed Modal
+secret. Skipped cleanly otherwise.
 
-Run from repo root:
-    modal run tests/test_modal_data.py::app.run_all
-    modal run tests/test_modal_data.py::app.dry_runs_only
+* :class:`ModalConfigShapeUnitTests` — pure-Python shape of the
+  ExperimentConfig values used by the smoke runner. No Modal call.
+* :class:`ModalVolumeIntegrationTests` — verify the expected data dirs
+  are present on the rag-poisoning-data volume.
+* :class:`ModalContainerImportIntegrationTests` — call ``run_worker`` with
+  zero questions to exercise container setup + imports.
+* :class:`ModalVanillaCleanIntegrationTests` — small live run on Modal.
+* :class:`ModalAgenticCleanIntegrationTests` — small live run on Modal.
 """
 
 import json
 import os
-import sys
 import time
+import unittest
 
-import modal
+import pytest
 
-from src.experiments.orchestrator import (
-    app,
-    run_worker,
-    image,
-    volume,
-    VOLUME_MOUNT,
-    RESULTS_DIR,
-)
-from src.experiments.experiment import ExperimentConfig
-
-
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
 
 SMOKE_PREFIX = '_phase4_test_'
 TEST_QUERY_IDS = ['test0', 'test1']
 
 
-# ---------------------------------------------------------------------------
-# Helper functions (on Modal)
-# ---------------------------------------------------------------------------
+def _modal_credentials_or_skip() -> None:
+    if not os.path.exists(os.path.expanduser('~/.modal.toml')):
+        raise unittest.SkipTest(
+            "Modal credentials not found at ~/.modal.toml. "
+            "Run `modal token new` to authenticate."
+        )
+
+
+# ===========================================================================
+# Unit suite
+# ===========================================================================
+
+class ModalConfigShapeUnitTests(unittest.TestCase):
+    """ExperimentConfig values used by the Modal smoke runner — pure shape."""
+
+    def test_smoke_configs_are_well_formed(self):
+        from src.experiments.experiment import ExperimentConfig
+
+        config = ExperimentConfig(
+            experiment_id=f'{SMOKE_PREFIX}vanilla_clean',
+            architecture='vanilla',
+            attack_type='clean',
+            k=10,
+        )
+        d = config.to_dict()
+        # Worker reconstructs from this dict (drops corpus_type).
+        cfg_kwargs = {k: v for k, v in d.items() if k != 'corpus_type'}
+        reconstructed = ExperimentConfig(**cfg_kwargs)
+        self.assertEqual(reconstructed.experiment_id, config.experiment_id)
+        self.assertTrue(d['experiment_id'].startswith(SMOKE_PREFIX),
+                        "Smoke configs MUST be prefixed so cleanup is safe")
+
+
+# ===========================================================================
+# Modal helper functions — defined as @app.function so they run in containers.
+#
+# We attach them to the orchestrator's existing app at import time so
+# `app.run()` below brings them online together with run_worker.
+# ===========================================================================
+
+from src.experiments.orchestrator import (  # noqa: E402
+    app, run_worker, image, volume, VOLUME_MOUNT, RESULTS_DIR,
+)
+
 
 @app.function(image=image, volumes={VOLUME_MOUNT: volume}, timeout=60)
 def cleanup_test_results() -> list[str]:
@@ -69,7 +102,6 @@ def verify_results_on_volume(experiment_id: str, expected_ids: list[str]) -> dic
         if not os.path.exists(path):
             results[qid] = {'found': False}
             continue
-
         with open(path) as f:
             data = json.load(f)
         results[qid] = {
@@ -78,7 +110,6 @@ def verify_results_on_volume(experiment_id: str, expected_ids: list[str]) -> dic
             'error': data.get('error'),
             'latency': data.get('latency_seconds'),
         }
-
     return {'found_dir': True, 'results': results}
 
 
@@ -86,168 +117,128 @@ def verify_results_on_volume(experiment_id: str, expected_ids: list[str]) -> dic
 def check_volume_data() -> dict:
     """Check if expected data exists on the Modal volume."""
     volume.reload()
-
     checks = {}
-    for path_label, path in [
+    for label, path in [
         ('vector-store', f'{VOLUME_MOUNT}/vector-store'),
         ('original-nq', f'{VOLUME_MOUNT}/original-datasets/nq'),
         ('experiment-datasets', f'{VOLUME_MOUNT}/experiment-datasets'),
     ]:
         exists = os.path.isdir(path)
         file_count = len(os.listdir(path)) if exists else 0
-        checks[path_label] = {'exists': exists, 'file_count': file_count}
-
+        checks[label] = {'exists': exists, 'file_count': file_count}
     return checks
 
 
-# ---------------------------------------------------------------------------
-# Test: dry runs (no API cost)
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# Integration suite — every Modal-touching class shares the app.run() context
+# via class-level setUp/tearDown. Each class isolates one scenario.
+# ===========================================================================
 
-@app.local_entrypoint()
-def dry_runs_only():
-    """Run only the dry-run tests (no API cost)."""
-    print(f"{'=' * 60}")
-    print("Phase 4 Modal Tests — DRY RUN ONLY")
-    print(f"{'=' * 60}")
+class _ModalRunContextMixin:
+    """Class-level ``with app.run()`` lifecycle.
 
-    test_volume_data()
-    test_import_on_container()
+    Subclasses get a live Modal app context for the duration of every
+    method in the class, so ``func.remote(...)`` calls work directly.
+    """
 
-    print(f"\n{'=' * 60}")
-    print("DRY RUN TESTS PASSED")
-    print(f"{'=' * 60}")
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        _modal_credentials_or_skip()
+        cls._app_ctx = app.run()
+        cls._app_ctx.__enter__()
 
-
-# ---------------------------------------------------------------------------
-# Test: full suite
-# ---------------------------------------------------------------------------
-
-@app.local_entrypoint()
-def run_all():
-    """Run all Modal tests including live API calls."""
-    print(f"{'=' * 60}")
-    print("Phase 4 Modal Tests — FULL SUITE")
-    print(f"  Test questions: {TEST_QUERY_IDS}")
-    print(f"{'=' * 60}")
-
-    test_volume_data()
-    test_import_on_container()
-    test_vanilla_clean()
-    test_agentic_clean()
-
-    print(f"\n{'=' * 60}")
-    print("ALL MODAL TESTS PASSED")
-    print(f"{'=' * 60}")
+    @classmethod
+    def tearDownClass(cls):
+        ctx = getattr(cls, '_app_ctx', None)
+        if ctx is not None:
+            ctx.__exit__(None, None, None)
+        super().tearDownClass()
 
 
-# ---------------------------------------------------------------------------
-# Individual tests
-# ---------------------------------------------------------------------------
+@pytest.mark.modal
+class ModalVolumeIntegrationTests(_ModalRunContextMixin, unittest.TestCase):
+    """Verify expected data dirs exist on the rag-poisoning-data volume."""
 
-def test_volume_data():
-    """Verify expected data exists on Modal volume."""
-    print(f"\n{'─' * 60}")
-    print("[test_volume_data]")
-
-    checks = check_volume_data.remote()
-    for label, info in checks.items():
-        status = "OK" if info['exists'] else "MISSING"
-        print(f"  {status}  {label} ({info['file_count']} items)")
-        assert info['exists'], f"Missing volume data: {label}"
-
-    print("  PASSED")
+    def test_volume_has_required_directories(self):
+        checks = check_volume_data.remote()
+        for label, info in checks.items():
+            self.assertTrue(info['exists'], f"Missing volume data: {label}")
 
 
-def test_import_on_container():
-    """Verify all src modules import on the Modal container."""
-    print(f"\n{'─' * 60}")
-    print("[test_import_on_container]")
+@pytest.mark.modal
+class ModalContainerImportIntegrationTests(_ModalRunContextMixin, unittest.TestCase):
+    """Container setup + src/ imports run cleanly on the Modal worker image."""
 
-    # The run_worker function imports the full stack on the container.
-    # If it can be called (even with an error), imports work.
-    config = ExperimentConfig(
-        experiment_id=f'{SMOKE_PREFIX}import_test',
-        architecture='vanilla',
-        attack_type='clean',
-        k=10,
-    )
-
-    # Run with 0 questions — just tests container setup + imports
-    try:
+    def test_run_worker_with_empty_question_list(self):
+        from src.experiments.experiment import ExperimentConfig
+        config = ExperimentConfig(
+            experiment_id=f'{SMOKE_PREFIX}import_test',
+            architecture='vanilla',
+            attack_type='clean',
+            k=10,
+        )
+        # Zero questions = pure container/import smoke.
         summary = run_worker.remote(config.to_dict(), [])
-        print(f"  Worker returned: {summary}")
-        assert summary['completed'] == 0
-        assert summary['errors'] == 0
-        print("  PASSED")
-    except Exception as e:
-        print(f"  ERROR: {e}")
-        raise
+        self.assertEqual(summary['completed'], 0)
+        self.assertEqual(summary['errors'], 0)
 
 
-def test_vanilla_clean():
-    """Run vanilla RAG on 2 questions via Modal worker."""
-    print(f"\n{'─' * 60}")
-    print(f"[test_vanilla_clean] questions={TEST_QUERY_IDS}")
+@pytest.mark.modal
+class ModalVanillaCleanIntegrationTests(_ModalRunContextMixin, unittest.TestCase):
+    """Vanilla RAG, clean corpus, two questions on Modal."""
 
-    config = ExperimentConfig(
-        experiment_id=f'{SMOKE_PREFIX}vanilla_clean',
-        architecture='vanilla',
-        attack_type='clean',
-        k=10,
-    )
+    def setUp(self):
+        super().setUp()
+        cleanup_test_results.remote()
 
-    # Cleanup any previous test results
-    cleanup_test_results.remote()
+    def tearDown(self):
+        cleanup_test_results.remote()
+        super().tearDown()
 
-    start = time.time()
-    summary = run_worker.remote(config.to_dict(), TEST_QUERY_IDS)
-    elapsed = time.time() - start
+    def test_two_questions_complete_with_results_on_volume(self):
+        from src.experiments.experiment import ExperimentConfig
+        config = ExperimentConfig(
+            experiment_id=f'{SMOKE_PREFIX}vanilla_clean',
+            architecture='vanilla',
+            attack_type='clean',
+            k=10,
+        )
+        start = time.time()
+        summary = run_worker.remote(config.to_dict(), TEST_QUERY_IDS)
+        elapsed = time.time() - start
 
-    print(f"  Worker returned in {elapsed:.1f}s")
-    print(f"  completed={summary['completed']}  errors={summary['errors']}")
+        self.assertEqual(summary['completed'], len(TEST_QUERY_IDS),
+                         f"Expected {len(TEST_QUERY_IDS)} completed in {elapsed:.1f}s")
+        self.assertEqual(summary['errors'], 0)
 
-    assert summary['completed'] == len(TEST_QUERY_IDS), f"Expected {len(TEST_QUERY_IDS)} completed"
-    assert summary['errors'] == 0, f"Unexpected errors: {summary['errors']}"
-
-    # Verify results on volume
-    verification = verify_results_on_volume.remote(config.experiment_id, TEST_QUERY_IDS)
-    assert verification['found_dir'], "Result directory not found on volume"
-
-    for qid, info in verification['results'].items():
-        assert info['found'], f"Missing result for {qid}"
-        assert not info.get('error'), f"Error for {qid}: {info.get('error')}"
-        print(f"  {qid}: OK ({info.get('latency', 0):.1f}s) — {info.get('answer', '')[:60]}")
-
-    # Cleanup
-    cleanup_test_results.remote()
-    print("  PASSED")
+        verification = verify_results_on_volume.remote(config.experiment_id, TEST_QUERY_IDS)
+        self.assertTrue(verification['found_dir'])
+        for qid, info in verification['results'].items():
+            self.assertTrue(info['found'], f"Missing result for {qid}")
+            self.assertFalse(info.get('error'), f"Error for {qid}: {info.get('error')}")
 
 
-def test_agentic_clean():
-    """Run agentic RAG on 2 questions via Modal worker."""
-    print(f"\n{'─' * 60}")
-    print(f"[test_agentic_clean] questions={TEST_QUERY_IDS}")
+@pytest.mark.modal
+class ModalAgenticCleanIntegrationTests(_ModalRunContextMixin, unittest.TestCase):
+    """Agentic RAG, clean corpus, two questions on Modal."""
 
-    config = ExperimentConfig(
-        experiment_id=f'{SMOKE_PREFIX}agentic_clean',
-        architecture='agentic',
-        attack_type='clean',
-        k=10,
-    )
+    def setUp(self):
+        super().setUp()
+        cleanup_test_results.remote()
 
-    cleanup_test_results.remote()
+    def tearDown(self):
+        cleanup_test_results.remote()
+        super().tearDown()
 
-    start = time.time()
-    summary = run_worker.remote(config.to_dict(), TEST_QUERY_IDS)
-    elapsed = time.time() - start
-
-    print(f"  Worker returned in {elapsed:.1f}s")
-    print(f"  completed={summary['completed']}  errors={summary['errors']}")
-
-    assert summary['completed'] == len(TEST_QUERY_IDS), f"Expected {len(TEST_QUERY_IDS)} completed"
-    assert summary['errors'] == 0, f"Unexpected errors: {summary['errors']}"
-
-    # Cleanup
-    cleanup_test_results.remote()
-    print("  PASSED")
+    def test_two_questions_complete(self):
+        from src.experiments.experiment import ExperimentConfig
+        config = ExperimentConfig(
+            experiment_id=f'{SMOKE_PREFIX}agentic_clean',
+            architecture='agentic',
+            attack_type='clean',
+            k=10,
+        )
+        summary = run_worker.remote(config.to_dict(), TEST_QUERY_IDS)
+        self.assertEqual(summary['completed'], len(TEST_QUERY_IDS))
+        self.assertEqual(summary['errors'], 0)
