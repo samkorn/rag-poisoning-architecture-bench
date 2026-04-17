@@ -1,5 +1,4 @@
-<h1 align="center">Architecture Matters</h1>
-<p align="center"><em>Comparing RAG Systems under Knowledge Base Poisoning</em></p>
+<h1 align="center">Architecture Matters: Comparing RAG Systems under Knowledge Base Poisoning</h1>
 
 <p align="center">
   <a href="paper/paper.pdf">Paper</a>
@@ -158,7 +157,7 @@ flowchart LR
 | **Vanilla RAG** | Retrieve top-K, concatenate into a single prompt, generate. | [src/architectures/vanilla_rag.py](src/architectures/vanilla_rag.py) |
 | **Agentic RAG** | PydanticAI agent with a retrieval tool in a reasoning loop — can re-query, inspect documents, and stop when confident. | [src/architectures/agentic_rag.py](src/architectures/agentic_rag.py) |
 | **MADAM-RAG** | Multi-agent debate ([Wang et al., COLM 2025](https://arxiv.org/abs/2504.15253)): one agent per retrieved document, rounds of deliberation, aggregator produces final answer. | [src/architectures/madam_rag.py](src/architectures/madam_rag.py) |
-| **RLM** | Recursive Language Model: sees the full topic context (not top-K), decomposes programmatically via sub-LM calls. | [src/architectures/recursive_lm.py](src/architectures/recursive_lm.py) |
+| **RLM** | Recursive Language Model ([Zhang et al., 2025](https://arxiv.org/abs/2512.24601)): sees the full topic context (not top-K), decomposes programmatically via sub-LM calls. | [src/architectures/recursive_lm.py](src/architectures/recursive_lm.py) |
 
 All four use **gpt-5-mini** as the backbone LLM, so cross-architecture differences reflect orchestration design rather than base-model capability.
 
@@ -173,7 +172,7 @@ All four use **gpt-5-mini** as the backbone LLM, so cross-architecture differenc
 
 ### Evaluation
 
-- **Judge**: gpt-5-mini (high reasoning effort) classifies each response into one of seven behavioral categories, post-hoc merged into five for headline analysis: `CORRECT`, `CORRECT_WITH_DETECTION`, `HEDGING`, `INCORRECT`, `UNKNOWN`. The judge labels were spot-validated against 1,475 human labels in [analysis/human_labels.csv](analysis/) — see the paper for per-category precision and the caveats around `CORRECT_WITH_DETECTION` in particular.
+- **Judge**: gpt-5-mini (high reasoning effort) classifies each response into one of seven behavioral categories, post-hoc merged into five for headline analysis: `CORRECT`, `CORRECT_WITH_DETECTION`, `HEDGING`, `INCORRECT`, `UNKNOWN`. The judge labels were spot-validated against 1,475 human labels (`human_labels.csv`, bundled in the [Zenodo archive](https://doi.org/10.5281/zenodo.19582217) and fetched by `scripts/download_data.sh`) — see the paper for per-category precision and the caveats around `CORRECT_WITH_DETECTION` in particular.
 - **Attack Success Rate (ASR)**: `target_present_in_response AND NOT is_correct`. Clean-conditioned ASR restricts the denominator to questions each architecture answers correctly on clean inputs, isolating the effect of the attack.
 - **Noise filter**: the 229 exclusions are produced by a separate GPT-5-mini classifier pass (web search enabled) run once per question. See the paper's Dataset section for the full procedure.
 
