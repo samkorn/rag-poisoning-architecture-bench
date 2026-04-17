@@ -14,7 +14,7 @@
 set -euo pipefail
 
 show_help() {
-    sed -n '3,13p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    awk 'NR==1 {next} /^[^#]/ {exit} {sub(/^# ?/, ""); print}' "${BASH_SOURCE[0]}"
 }
 
 force=0
@@ -26,11 +26,10 @@ for arg in "$@"; do
     esac
 done
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 cd "${REPO_ROOT}"
 
 VENV_DIR="${REPO_ROOT}/venv"
-PYTHON_BIN="${VENV_DIR}/bin/python"
 PIP_BIN="${VENV_DIR}/bin/pip"
 
 # ---------------------------------------------------------------------------

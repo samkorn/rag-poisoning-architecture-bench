@@ -1,0 +1,11 @@
+
+==> [1/3] Embed corpora (Contriever on Modal GPU)
+    $ ${REPO_ROOT}/venv/bin/modal run src/embeddings/embed_datasets.py
+
+==> [2/3] Build FAISS indexes from embeddings
+    $ ${REPO_ROOT}/venv/bin/python src/embeddings/build_vector_indexes.py
+
+==> [3/3] Filter to gold-retrieval questions (top-10)
+    $ ${REPO_ROOT}/venv/bin/python src/data/filter_gold_questions.py
+
+Done. FAISS indexes + gold-filtered questions ready for experiments.

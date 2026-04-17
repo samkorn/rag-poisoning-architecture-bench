@@ -1,0 +1,63 @@
+==> [1/4] setup_environment.sh
+    $ ${REPO_ROOT}/scripts/setup_environment.sh  (no --dry-run support; would execute)
+
+==> [2/4] prepare_data.sh
+
+==> [1/6] Download NQ from BEIR
+    $ ${REPO_ROOT}/venv/bin/python src/data/download_datasets.py
+
+==> [2/6] Generate correct answers (Modal)
+    $ ${REPO_ROOT}/venv/bin/modal run src/data/create_correct_answers.py
+
+==> [3/6] Generate naive poisoned docs (Modal)
+    $ ${REPO_ROOT}/venv/bin/modal run src/data/create_incorrect_answers_poisoned_docs.py
+
+==> [4/6] Generate CorruptRAG-AK poisoned docs (Modal)
+    $ ${REPO_ROOT}/venv/bin/modal run src/data/create_corruptrag_ak_poisoned_docs.py
+
+==> [5/6] Build nq-questions.jsonl
+    $ ${REPO_ROOT}/venv/bin/python src/data/create_questions.py
+
+==> [6/6] Assemble poisoned corpora (naive + CorruptRAG-AK)
+    $ ${REPO_ROOT}/venv/bin/python src/data/create_poisoned_datasets.py
+
+Done. Outputs in src/data/experiment-datasets/ and src/data/original-datasets/.
+
+==> [3/4] prepare_embeddings.sh
+
+==> [1/3] Embed corpora (Contriever on Modal GPU)
+    $ ${REPO_ROOT}/venv/bin/modal run src/embeddings/embed_datasets.py
+
+==> [2/3] Build FAISS indexes from embeddings
+    $ ${REPO_ROOT}/venv/bin/python src/embeddings/build_vector_indexes.py
+
+==> [3/3] Filter to gold-retrieval questions (top-10)
+    $ ${REPO_ROOT}/venv/bin/python src/data/filter_gold_questions.py
+
+Done. FAISS indexes + gold-filtered questions ready for experiments.
+
+==> [4/4] run_experiments.sh --experiments (orchestrator, detached)
+
+==> [1/4] Upload data to Modal Volume 'rag-poisoning-data'
+    $ ${REPO_ROOT}/venv/bin/python src/experiments/upload_data.py
+
+==> [2/4] Launch 12 experiments (detached)
+    $ ${REPO_ROOT}/venv/bin/modal run --detach src/experiments/orchestrator.py
+    Monitor: ${REPO_ROOT}/venv/bin/modal app logs rag-poisoning-bench
+
+Done. Use 'modal app list' to see running apps.
+
+================================================================
+Experiments are running detached on Modal. When they finish:
+
+  scripts/run_experiments.sh --judge
+  # wait for judge to finish
+  scripts/run_experiments.sh --noise
+  # wait for noise to finish
+  scripts/run_all.sh --resume     # analysis + paper
+
+Monitor:
+  modal app logs rag-poisoning-bench
+  modal app logs rag-poisoning-judge
+  modal app logs rag-poisoning-noise
+================================================================

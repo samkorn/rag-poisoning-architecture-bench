@@ -19,7 +19,7 @@
 set -euo pipefail
 
 show_help() {
-    sed -n '3,19p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    awk 'NR==1 {next} /^[^#]/ {exit} {sub(/^# ?/, ""); print}' "${BASH_SOURCE[0]}"
 }
 
 quick=0
@@ -31,7 +31,12 @@ for arg in "$@"; do
     esac
 done
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+
+if [[ ! -d "${REPO_ROOT}/paper" ]]; then
+    echo "ERROR: paper directory not found at ${REPO_ROOT}/paper" >&2
+    exit 1
+fi
 cd "${REPO_ROOT}/paper"
 
 PDFLATEX=/Library/TeX/texbin/pdflatex

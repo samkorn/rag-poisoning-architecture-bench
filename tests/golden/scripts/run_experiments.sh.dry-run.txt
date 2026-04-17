@@ -1,0 +1,23 @@
+
+==> [1/4] Upload data to Modal Volume 'rag-poisoning-data'
+    $ ${REPO_ROOT}/venv/bin/python src/experiments/upload_data.py
+
+==> [2/4] Launch 12 experiments (detached)
+    $ ${REPO_ROOT}/venv/bin/modal run --detach src/experiments/orchestrator.py
+    Monitor: ${REPO_ROOT}/venv/bin/modal app logs rag-poisoning-bench
+
+NOTE: Judge + noise launched immediately (detached). They query the
+      Modal Volume for results, so if experiments aren't done yet,
+      they will skip un-judged questions and need to be re-run.
+      Prefer launching judge + noise separately after experiments
+      complete:  scripts/run_experiments.sh --judge  (then --noise)
+
+==> [3/4] Launch LLM judge (detached)
+    $ ${REPO_ROOT}/venv/bin/modal run --detach src/experiments/run_judge_modal.py
+    Monitor: ${REPO_ROOT}/venv/bin/modal app logs rag-poisoning-judge
+
+==> [4/4] Launch noise filter (detached)
+    $ ${REPO_ROOT}/venv/bin/modal run --detach src/experiments/run_noise_modal.py
+    Monitor: ${REPO_ROOT}/venv/bin/modal app logs rag-poisoning-noise
+
+Done. Use 'modal app list' to see running apps.

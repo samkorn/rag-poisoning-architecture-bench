@@ -31,51 +31,70 @@
 # Usage:
 #   scripts/run_all.sh                 # env -> data -> embeddings -> launch experiments
 #   scripts/run_all.sh --resume        # analysis + paper (after Modal runs are done)
+#   scripts/run_all.sh --dry-run       # print what every downstream script would do
 #   scripts/run_all.sh --help
 
 set -euo pipefail
 
 show_help() {
-    sed -n '3,33p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    awk 'NR==1 {next} /^[^#]/ {exit} {sub(/^# ?/, ""); print}' "${BASH_SOURCE[0]}"
 }
 
 resume=0
+DRY_RUN=0
 for arg in "$@"; do
     case "${arg}" in
         --help|-h) show_help; exit 0 ;;
         --resume)  resume=1 ;;
+        --dry-run) DRY_RUN=1 ;;
         *)         echo "ERROR: unknown arg '${arg}'" >&2; show_help >&2; exit 2 ;;
     esac
 done
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 cd "${REPO_ROOT}"
 
 SCRIPTS="${REPO_ROOT}/scripts"
 
+# Scripts that support --dry-run get it propagated; setup_environment.sh
+# does not, so it's always skipped entirely when DRY_RUN is on.
+dry_args=()
+if [[ "${DRY_RUN}" == "1" ]]; then
+    dry_args=(--dry-run)
+fi
+
 if [[ "${resume}" == "1" ]]; then
     echo "==> Resume: analysis + paper"
-    "${SCRIPTS}/run_analysis.sh"
-    "${SCRIPTS}/generate_paper.sh"
+    if [[ "${DRY_RUN}" == "0" ]]; then
+        "${SCRIPTS}/run_analysis.sh"
+        "${SCRIPTS}/generate_paper.sh"
+    else
+        echo "    \$ ${SCRIPTS}/run_analysis.sh    (no --dry-run support; would execute)"
+        echo "    \$ ${SCRIPTS}/generate_paper.sh  (no --dry-run support; would execute)"
+    fi
     echo
     echo "Done."
     exit 0
 fi
 
 echo "==> [1/4] setup_environment.sh"
-"${SCRIPTS}/setup_environment.sh"
+if [[ "${DRY_RUN}" == "0" ]]; then
+    "${SCRIPTS}/setup_environment.sh"
+else
+    echo "    \$ ${SCRIPTS}/setup_environment.sh  (no --dry-run support; would execute)"
+fi
 
 echo
 echo "==> [2/4] prepare_data.sh"
-"${SCRIPTS}/prepare_data.sh"
+"${SCRIPTS}/prepare_data.sh" "${dry_args[@]+"${dry_args[@]}"}"
 
 echo
 echo "==> [3/4] prepare_embeddings.sh"
-"${SCRIPTS}/prepare_embeddings.sh"
+"${SCRIPTS}/prepare_embeddings.sh" "${dry_args[@]+"${dry_args[@]}"}"
 
 echo
 echo "==> [4/4] run_experiments.sh --experiments (orchestrator, detached)"
-"${SCRIPTS}/run_experiments.sh" --experiments
+"${SCRIPTS}/run_experiments.sh" --experiments "${dry_args[@]+"${dry_args[@]}"}"
 
 cat <<'EOF'
 

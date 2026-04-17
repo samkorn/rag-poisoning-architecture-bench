@@ -18,28 +18,31 @@
 #   scripts/prepare_data.sh --skip-download      # skip step 1 (NQ already present)
 #   scripts/prepare_data.sh --skip-llm           # skip steps 2-4 (already generated)
 #   scripts/prepare_data.sh --from <step>        # resume from step N (1-6)
+#   scripts/prepare_data.sh --dry-run            # print commands without executing
 #   scripts/prepare_data.sh --help
 
 set -euo pipefail
 
 show_help() {
-    sed -n '3,21p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    awk 'NR==1 {next} /^[^#]/ {exit} {sub(/^# ?/, ""); print}' "${BASH_SOURCE[0]}"
 }
 
 skip_download=0
 skip_llm=0
 from_step=1
+DRY_RUN=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --help|-h)       show_help; exit 0 ;;
         --skip-download) skip_download=1; shift ;;
         --skip-llm)      skip_llm=1; shift ;;
         --from)          from_step="$2"; shift 2 ;;
+        --dry-run)       DRY_RUN=1; shift ;;
         *)               echo "ERROR: unknown arg '$1'" >&2; show_help >&2; exit 2 ;;
     esac
 done
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 cd "${REPO_ROOT}"
 
 PYTHON="${REPO_ROOT}/venv/bin/python"
@@ -64,7 +67,9 @@ run_step() {
     echo
     echo "==> [${n}/6] ${label}"
     echo "    \$ $*"
-    "$@"
+    if [[ "${DRY_RUN}" == "0" ]]; then
+        "$@"
+    fi
 }
 
 # ---------------------------------------------------------------------------

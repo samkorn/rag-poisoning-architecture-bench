@@ -29,7 +29,7 @@
 set -euo pipefail
 
 show_help() {
-    sed -n '3,28p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    awk 'NR==1 {next} /^[^#]/ {exit} {sub(/^# ?/, ""); print}' "${BASH_SOURCE[0]}"
 }
 
 force=0
@@ -43,12 +43,15 @@ for arg in "$@"; do
     esac
 done
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 cd "${REPO_ROOT}"
 
-ZENODO_RECORD_ID="19582217"
+# Zenodo has two IDs: the concept DOI (citation; resolves to the latest
+# version) and a version-specific record ID where files actually live.
+# DOI 10.5281/zenodo.19582217 redirects to record 19582218.
+ZENODO_VERSION_ID="19582218"
 ZIP_NAME="rag-poisoning-architecture-bench-data.zip"
-ZENODO_URL="https://zenodo.org/records/${ZENODO_RECORD_ID}/files/${ZIP_NAME}"
+ZENODO_URL="https://zenodo.org/records/${ZENODO_VERSION_ID}/files/${ZIP_NAME}"
 
 STAGING_DIR="${REPO_ROOT}/.zenodo-staging"
 ZIP_PATH="${STAGING_DIR}/${ZIP_NAME}"
@@ -98,7 +101,8 @@ merge_into() {
     # of a whole dir, so we iterate instead.
     find "${src_dir}" -mindepth 1 -maxdepth 1 -print0 | while IFS= read -r -d '' child; do
         local base; base="$(basename "${child}")"
-        rm -rf "${dst_dir}/${base}"
+        # :? ensures dst_dir is non-empty, guarding against `rm -rf /${base}`.
+        rm -rf "${dst_dir:?}/${base}"
         mv "${child}" "${dst_dir}/${base}"
     done
     rmdir "${src_dir}"
@@ -154,19 +158,19 @@ done
 # ---------------------------------------------------------------------------
 # Distribute into repo layout
 # ---------------------------------------------------------------------------
-echo "==> Installing results/experiments -> ${EXPERIMENTS_DEST#${REPO_ROOT}/}"
+echo "==> Installing results/experiments -> ${EXPERIMENTS_DEST#"${REPO_ROOT}"/}"
 merge_into "${STAGING_DIR}/results/experiments" "${EXPERIMENTS_DEST}"
 
-echo "==> Installing results/judge       -> ${JUDGE_DEST#${REPO_ROOT}/}"
+echo "==> Installing results/judge       -> ${JUDGE_DEST#"${REPO_ROOT}"/}"
 merge_into "${STAGING_DIR}/results/judge" "${JUDGE_DEST}"
 
-echo "==> Installing results/noise       -> ${NOISE_DEST#${REPO_ROOT}/}"
+echo "==> Installing results/noise       -> ${NOISE_DEST#"${REPO_ROOT}"/}"
 merge_into "${STAGING_DIR}/results/noise" "${NOISE_DEST}"
 
 # results/ is now empty — drop it.
 rmdir "${STAGING_DIR}/results"
 
-echo "==> Installing data/*.jsonl         -> ${DATA_DEST#${REPO_ROOT}/}"
+echo "==> Installing data/*.jsonl         -> ${DATA_DEST#"${REPO_ROOT}"/}"
 mkdir -p "${DATA_DEST}"
 find "${STAGING_DIR}/data" -mindepth 1 -maxdepth 1 -type f -print0 \
     | while IFS= read -r -d '' f; do
@@ -174,7 +178,7 @@ find "${STAGING_DIR}/data" -mindepth 1 -maxdepth 1 -type f -print0 \
     done
 rmdir "${STAGING_DIR}/data"
 
-echo "==> Installing human_labels.csv     -> ${HUMAN_LABELS_DEST#${REPO_ROOT}/}"
+echo "==> Installing human_labels.csv     -> ${HUMAN_LABELS_DEST#"${REPO_ROOT}"/}"
 mv "${STAGING_DIR}/human_labels.csv" "${HUMAN_LABELS_DEST}"
 
 echo
