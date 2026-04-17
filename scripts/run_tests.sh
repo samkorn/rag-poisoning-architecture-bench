@@ -65,8 +65,11 @@ case "${mode}" in
 esac
 
 echo "==> mode=${mode}  marker='${marker_expr}'"
+# `"${extra_args[@]+"${extra_args[@]}"}"` vanishes when the array is empty —
+# required under `set -u`, which otherwise treats an empty array expansion as
+# an unset variable and aborts.
 if [[ -n "${marker_expr}" ]]; then
-    exec "${PYTEST}" tests/ -m "${marker_expr}" "${extra_args[@]}"
+    exec "${PYTEST}" tests/ -m "${marker_expr}" "${extra_args[@]+"${extra_args[@]}"}"
 else
-    exec "${PYTEST}" tests/ "${extra_args[@]}"
+    exec "${PYTEST}" tests/ "${extra_args[@]+"${extra_args[@]}"}"
 fi
