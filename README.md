@@ -1,16 +1,16 @@
-<h1 align="center">Architecture Matters: Comparing RAG Systems under Knowledge Base Poisoning</h1>
+<h1 align="center">Architecture Matters:<br>Comparing RAG Systems under Knowledge Base Poisoning</h1>
+
+<p align="center">
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-blue.svg"></a>
+  <a href="https://www.python.org/downloads/release/python-3120/"><img alt="Python 3.12" src="https://img.shields.io/badge/python-3.12-blue.svg"></a>
+  <a href="https://doi.org/10.5281/zenodo.19582217"><img alt="DOI" src="https://zenodo.org/badge/DOI/10.5281/zenodo.19582217.svg"></a>
+</p>
 
 <p align="center">
   <a href="paper/paper.pdf">Paper</a>
   &nbsp;·&nbsp;
   <a href="https://doi.org/10.5281/zenodo.19582217">Data</a>
   <!-- &nbsp;·&nbsp; <a href="#">Blog post</a> — TODO: add when published -->
-</p>
-
-<p align="center">
-  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-blue.svg"></a>
-  <a href="https://www.python.org/downloads/release/python-3120/"><img alt="Python 3.12" src="https://img.shields.io/badge/python-3.12-blue.svg"></a>
-  <a href="https://doi.org/10.5281/zenodo.19582217"><img alt="DOI" src="https://zenodo.org/badge/DOI/10.5281/zenodo.19582217.svg"></a>
 </p>
 
 <p align="center">
