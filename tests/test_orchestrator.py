@@ -1,249 +1,169 @@
-"""
-Quick smoke test for orchestrator.py.
+"""Unit tests for src.experiments.orchestrator (pure-Python helpers).
 
-Tests the pure-Python helpers that don't require Modal infrastructure:
-  - build_experiment_matrix() — correct count, ordering, and field values
-  - is_experiment_complete() — file-count based completion detection
-  - ExperimentConfig round-trip through to_dict() (worker serialization contract)
+Covers ``build_experiment_matrix()`` shape/contents and
+``is_experiment_complete()`` file-count logic. Also round-trips
+``ExperimentConfig`` through ``to_dict()`` / reconstruction (the
+serialization contract the Modal worker relies on).
 
-Run from repo root:
-    python tests/test_orchestrator.py
+No data, no Modal, no API calls — runs in the unit suite.
 """
 
 import json
 import os
-import tempfile
+import re
 import shutil
+import tempfile
+import unittest
 
-from src.experiments.orchestrator import build_experiment_matrix, is_experiment_complete
 from src.experiments.experiment import ExperimentConfig
+from src.experiments.orchestrator import build_experiment_matrix, is_experiment_complete
 
 
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
+class ExperimentMatrixUnitTests(unittest.TestCase):
+    """Properties of the 12-experiment matrix produced by build_experiment_matrix()."""
 
-def test_matrix_count():
-    """Exactly 12 experiments in the matrix."""
-    print("\n=== test_matrix_count ===")
-    experiments = build_experiment_matrix()
-    assert len(experiments) == 12, f"Expected 12, got {len(experiments)}"
-    print(f"  Count: {len(experiments)}")
-    print("  PASSED")
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.experiments = build_experiment_matrix()
 
+    def test_count_is_twelve(self):
+        self.assertEqual(len(self.experiments), 12)
 
-def test_matrix_ordering():
-    """Experiments are ordered: vanilla -> agentic -> rlm -> madam."""
-    print("\n=== test_matrix_ordering ===")
-    experiments = build_experiment_matrix()
-    archs = [e.architecture for e in experiments]
+    def test_ordering_is_vanilla_agentic_rlm_madam(self):
+        archs = [e.architecture for e in self.experiments]
 
-    # Find boundaries
-    first_agentic = archs.index('agentic')
-    first_rlm = archs.index('rlm')
-    first_madam = archs.index('madam')
-    last_vanilla = len(archs) - 1 - archs[::-1].index('vanilla')
-    last_agentic = len(archs) - 1 - archs[::-1].index('agentic')
-    last_rlm = len(archs) - 1 - archs[::-1].index('rlm')
+        first_agentic = archs.index('agentic')
+        first_rlm = archs.index('rlm')
+        first_madam = archs.index('madam')
+        last_vanilla = len(archs) - 1 - archs[::-1].index('vanilla')
+        last_agentic = len(archs) - 1 - archs[::-1].index('agentic')
+        last_rlm = len(archs) - 1 - archs[::-1].index('rlm')
 
-    assert last_vanilla < first_agentic, "Vanilla should come before agentic"
-    assert last_agentic < first_rlm, "Agentic should come before RLM"
-    assert last_rlm < first_madam, "RLM should come before MADAM"
+        self.assertLess(last_vanilla, first_agentic, "Vanilla should come before agentic")
+        self.assertLess(last_agentic, first_rlm, "Agentic should come before RLM")
+        self.assertLess(last_rlm, first_madam, "RLM should come before MADAM")
 
-    print(f"  Vanilla:  0..{last_vanilla}")
-    print(f"  Agentic:  {first_agentic}..{last_agentic}")
-    print(f"  RLM:      {first_rlm}..{last_rlm}")
-    print(f"  MADAM:    {first_madam}..{len(archs) - 1}")
-    print("  PASSED")
+    def test_three_experiments_per_architecture(self):
+        counts: dict[str, int] = {}
+        for e in self.experiments:
+            counts[e.architecture] = counts.get(e.architecture, 0) + 1
 
+        self.assertEqual(counts.get('vanilla'), 3)
+        self.assertEqual(counts.get('agentic'), 3)
+        self.assertEqual(counts.get('rlm'), 3)
+        self.assertEqual(counts.get('madam'), 3)
 
-def test_matrix_architecture_counts():
-    """Correct number of experiments per architecture (3 each)."""
-    print("\n=== test_matrix_architecture_counts ===")
-    experiments = build_experiment_matrix()
-    counts: dict[str, int] = {}
-    for e in experiments:
-        counts[e.architecture] = counts.get(e.architecture, 0) + 1
+    def test_rlm_has_no_k(self):
+        rlm_exps = [e for e in self.experiments if e.architecture == 'rlm']
+        self.assertGreater(len(rlm_exps), 0)
+        for e in rlm_exps:
+            self.assertIsNone(e.k, f"RLM {e.experiment_id} should have k=None, got {e.k}")
 
-    # 3 attacks × 1 k value = 3 per architecture
-    assert counts['vanilla'] == 3, f"Vanilla: expected 3, got {counts['vanilla']}"
-    assert counts['agentic'] == 3, f"Agentic: expected 3, got {counts['agentic']}"
-    assert counts['rlm'] == 3, f"RLM: expected 3, got {counts['rlm']}"
-    assert counts['madam'] == 3, f"MADAM: expected 3, got {counts['madam']}"
+    def test_non_rlm_uses_k_10(self):
+        for arch in ('vanilla', 'agentic', 'madam'):
+            k_vals = {e.k for e in self.experiments if e.architecture == arch}
+            self.assertEqual(k_vals, {10}, f"{arch}: expected K={{10}}, got {k_vals}")
 
-    print(f"  Counts: {counts}")
-    print("  PASSED")
+    def test_every_arch_covers_all_attacks(self):
+        expected_attacks = {'clean', 'naive', 'corruptrag_ak'}
+        for arch in ('vanilla', 'agentic', 'rlm', 'madam'):
+            attacks = {e.attack_type for e in self.experiments if e.architecture == arch}
+            self.assertEqual(attacks, expected_attacks, f"{arch}: missing attacks")
 
+    def test_experiment_ids_are_unique(self):
+        ids = [e.experiment_id for e in self.experiments]
+        self.assertEqual(len(ids), len(set(ids)), "Duplicate experiment IDs")
 
-def test_matrix_rlm_has_no_k():
-    """RLM experiments should have k=None."""
-    print("\n=== test_matrix_rlm_has_no_k ===")
-    experiments = build_experiment_matrix()
-    rlm_exps = [e for e in experiments if e.architecture == 'rlm']
+    def test_experiment_ids_match_arch_attack_pattern(self):
+        valid_archs = {'vanilla', 'agentic', 'rlm', 'madam'}
+        valid_attacks = {'clean', 'naive', 'corruptrag_ak'}
 
-    for e in rlm_exps:
-        assert e.k is None, f"RLM experiment {e.experiment_id} should have k=None, got k={e.k}"
-
-    print(f"  Checked {len(rlm_exps)} RLM experiments, all k=None")
-    print("  PASSED")
-
-
-def test_matrix_k_values():
-    """Non-RLM architectures all use fixed k=10."""
-    print("\n=== test_matrix_k_values ===")
-    experiments = build_experiment_matrix()
-
-    for arch in ('vanilla', 'agentic', 'madam'):
-        k_vals = {e.k for e in experiments if e.architecture == arch}
-        assert k_vals == {10}, (
-            f"{arch}: expected K values {{10}}, got {k_vals}"
-        )
-
-    print(f"  All non-RLM architectures have K = {{10}}")
-    print("  PASSED")
+        for e in self.experiments:
+            parts = e.experiment_id.split('_', 1)
+            self.assertEqual(len(parts), 2, f"ID {e.experiment_id!r} doesn't match arch_attack")
+            arch, attack = parts
+            self.assertIn(arch, valid_archs)
+            self.assertIn(attack, valid_attacks)
+            self.assertIsNone(re.search(r'_k\d+$', e.experiment_id),
+                              f"ID {e.experiment_id!r} has unexpected _k suffix")
 
 
-def test_matrix_attack_types():
-    """Every architecture covers all 3 attack types."""
-    print("\n=== test_matrix_attack_types ===")
-    experiments = build_experiment_matrix()
-    expected_attacks = {'clean', 'naive', 'corruptrag_ak'}
+class ExperimentConfigSerializationUnitTests(unittest.TestCase):
+    """ExperimentConfig.to_dict() round-trips through dict reconstruction."""
 
-    for arch in ('vanilla', 'agentic', 'rlm', 'madam'):
-        attacks = {e.attack_type for e in experiments if e.architecture == arch}
-        assert attacks == expected_attacks, (
-            f"{arch}: expected attacks {expected_attacks}, got {attacks}"
-        )
+    def test_round_trip_preserves_all_fields(self):
+        for config in build_experiment_matrix():
+            d = config.to_dict()
 
-    print(f"  All architectures cover attacks {expected_attacks}")
-    print("  PASSED")
+            # Worker reconstructs ExperimentConfig by dropping the derived
+            # 'corpus_type' key. Mirror that here.
+            cfg_kwargs = {k: v for k, v in d.items() if k != 'corpus_type'}
+            reconstructed = ExperimentConfig(**cfg_kwargs)
 
+            self.assertEqual(reconstructed.experiment_id, config.experiment_id)
+            self.assertEqual(reconstructed.architecture, config.architecture)
+            self.assertEqual(reconstructed.attack_type, config.attack_type)
+            self.assertEqual(reconstructed.k, config.k)
+            self.assertEqual(reconstructed.corpus_type, config.corpus_type)
 
-def test_matrix_unique_ids():
-    """All experiment_ids are unique."""
-    print("\n=== test_matrix_unique_ids ===")
-    experiments = build_experiment_matrix()
-    ids = [e.experiment_id for e in experiments]
-    assert len(ids) == len(set(ids)), (
-        f"Duplicate experiment IDs: {[x for x in ids if ids.count(x) > 1]}"
-    )
-    print(f"  {len(ids)} unique IDs")
-    print("  PASSED")
+            # The dict crosses container boundaries via Modal — must be JSON-safe.
+            json.dumps(d)
 
 
-def test_matrix_experiment_ids_format():
-    """Experiment IDs follow {arch}_{attack} pattern (no _k suffix)."""
-    print("\n=== test_matrix_experiment_ids_format ===")
-    import re
-    experiments = build_experiment_matrix()
+class IsExperimentCompleteUnitTests(unittest.TestCase):
+    """File-count-based completion detection in orchestrator.is_experiment_complete()."""
 
-    valid_archs = {'vanilla', 'agentic', 'rlm', 'madam'}
-    valid_attacks = {'clean', 'naive', 'corruptrag_ak'}
+    def setUp(self):
+        super().setUp()
+        self.tmp_dir = tempfile.mkdtemp(prefix='rag_orch_test_')
 
-    for e in experiments:
-        parts = e.experiment_id.split('_', 1)
-        assert len(parts) == 2, f"ID {e.experiment_id!r} doesn't match {{arch}}_{{attack}}"
-        arch, attack = parts
-        assert arch in valid_archs, f"Unknown arch in ID: {arch!r}"
-        assert attack in valid_attacks, f"Unknown attack in ID: {attack!r}"
-        # Ensure no _k suffix
-        assert not re.search(r'_k\d+$', e.experiment_id), (
-            f"ID {e.experiment_id!r} has unexpected _k suffix"
-        )
+        # is_experiment_complete reads RESULTS_DIR at the module level —
+        # monkey-patch it to point at the tempdir for the duration of the test.
+        import src.experiments.orchestrator as orch_mod
+        self._orch_mod = orch_mod
+        self._orig_results_dir = orch_mod.RESULTS_DIR
+        orch_mod.RESULTS_DIR = self.tmp_dir
 
-    print(f"  All {len(experiments)} IDs match {{arch}}_{{attack}} format")
-    print("  PASSED")
+        self.exp_id = 'test_vanilla_clean'
+        self.n_questions = 10
+        self.exp_dir = os.path.join(self.tmp_dir, self.exp_id)
 
+    def tearDown(self):
+        self._orch_mod.RESULTS_DIR = self._orig_results_dir
+        shutil.rmtree(self.tmp_dir, ignore_errors=True)
+        super().tearDown()
 
-def test_is_experiment_complete():
-    """is_experiment_complete checks file counts correctly."""
-    print("\n=== test_is_experiment_complete ===")
-    tmp_dir = tempfile.mkdtemp(prefix='rag_orch_test_')
+    def _write_result(self, filename: str, payload: dict) -> None:
+        os.makedirs(self.exp_dir, exist_ok=True)
+        with open(os.path.join(self.exp_dir, filename), 'w') as f:
+            json.dump(payload, f)
 
-    # Monkey-patch the RESULTS_DIR that is_experiment_complete reads from.
-    import src.experiments.orchestrator as orch_mod
-    orig_results_dir = orch_mod.RESULTS_DIR
-    orch_mod.RESULTS_DIR = tmp_dir
+    def test_missing_dir_is_incomplete(self):
+        self.assertFalse(is_experiment_complete(self.exp_id, self.n_questions))
 
-    try:
-        exp_id = 'test_vanilla_clean'
-        n_questions = 10
+    def test_empty_dir_is_incomplete(self):
+        os.makedirs(self.exp_dir)
+        self.assertFalse(is_experiment_complete(self.exp_id, self.n_questions))
 
-        # Case 1: directory doesn't exist -> incomplete
-        assert not is_experiment_complete(exp_id, n_questions), "Should be incomplete (no dir)"
-
-        # Case 2: directory exists but empty -> incomplete
-        exp_dir = os.path.join(tmp_dir, exp_id)
-        os.makedirs(exp_dir)
-        assert not is_experiment_complete(exp_id, n_questions), "Should be incomplete (empty dir)"
-
-        # Case 3: partial results -> incomplete
+    def test_partial_results_is_incomplete(self):
         for i in range(5):
-            with open(os.path.join(exp_dir, f'test{i}.json'), 'w') as f:
-                json.dump({'question_id': f'test{i}'}, f)
-        assert not is_experiment_complete(exp_id, n_questions), "Should be incomplete (5/10)"
+            self._write_result(f'test{i}.json', {'question_id': f'test{i}'})
+        self.assertFalse(is_experiment_complete(self.exp_id, self.n_questions))
 
-        # Case 4: summary.json shouldn't count toward completion
-        with open(os.path.join(exp_dir, 'summary.json'), 'w') as f:
-            json.dump({'completed': 5}, f)
-        assert not is_experiment_complete(exp_id, n_questions), "summary.json shouldn't count"
+    def test_summary_json_does_not_count_toward_completion(self):
+        for i in range(5):
+            self._write_result(f'test{i}.json', {'question_id': f'test{i}'})
+        self._write_result('summary.json', {'completed': 5})
+        self.assertFalse(is_experiment_complete(self.exp_id, self.n_questions))
 
-        # Case 5: all results present -> complete
-        for i in range(5, 10):
-            with open(os.path.join(exp_dir, f'test{i}.json'), 'w') as f:
-                json.dump({'question_id': f'test{i}'}, f)
-        assert is_experiment_complete(exp_id, n_questions), "Should be complete (10/10)"
+    def test_full_results_is_complete(self):
+        for i in range(self.n_questions):
+            self._write_result(f'test{i}.json', {'question_id': f'test{i}'})
+        self.assertTrue(is_experiment_complete(self.exp_id, self.n_questions))
 
-        # Case 6: more than needed -> still complete
-        with open(os.path.join(exp_dir, 'test_extra.json'), 'w') as f:
-            json.dump({'question_id': 'extra'}, f)
-        assert is_experiment_complete(exp_id, n_questions), "Should be complete (11/10)"
-
-        print("  All 6 cases passed")
-        print("  PASSED")
-    finally:
-        orch_mod.RESULTS_DIR = orig_results_dir
-        shutil.rmtree(tmp_dir, ignore_errors=True)
-
-
-def test_config_round_trip():
-    """ExperimentConfig survives to_dict() -> reconstruct (worker serialization)."""
-    print("\n=== test_config_round_trip ===")
-    experiments = build_experiment_matrix()
-
-    for config in experiments:
-        d = config.to_dict()
-
-        # Worker reconstructs ExperimentConfig by dropping derived 'corpus_type' key.
-        cfg_kwargs = {k: v for k, v in d.items() if k != 'corpus_type'}
-        reconstructed = ExperimentConfig(**cfg_kwargs)
-
-        assert reconstructed.experiment_id == config.experiment_id
-        assert reconstructed.architecture == config.architecture
-        assert reconstructed.attack_type == config.attack_type
-        assert reconstructed.k == config.k
-        assert reconstructed.corpus_type == config.corpus_type
-
-        # Verify dict is JSON-serializable (Modal sends it across containers).
-        json.dumps(d)
-
-    print(f"  Round-tripped all {len(experiments)} configs")
-    print("  PASSED")
-
-
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
-
-if __name__ == '__main__':
-    test_matrix_count()
-    test_matrix_ordering()
-    test_matrix_architecture_counts()
-    test_matrix_rlm_has_no_k()
-    test_matrix_k_values()
-    test_matrix_attack_types()
-    test_matrix_unique_ids()
-    test_matrix_experiment_ids_format()
-    test_is_experiment_complete()
-    test_config_round_trip()
-    print("\n=== ALL TESTS PASSED ===")
+    def test_excess_results_still_complete(self):
+        for i in range(self.n_questions):
+            self._write_result(f'test{i}.json', {'question_id': f'test{i}'})
+        self._write_result('test_extra.json', {'question_id': 'extra'})
+        self.assertTrue(is_experiment_complete(self.exp_id, self.n_questions))

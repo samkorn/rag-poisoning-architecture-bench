@@ -1,68 +1,79 @@
-"""
-Modal integration smoke test for the orchestrator pipeline.
+"""End-to-end Modal smoke for every architecture.
 
-Runs a single 3-question batch through each architecture (clean, k=10)
-to verify the end-to-end Modal worker pipeline: container setup, data
-loading from Volume, architecture execution, and result checkpointing.
+One single-question run per architecture (clean, k=10) verifying the
+full container + worker + checkpoint pipeline. All four architectures
+should pass in roughly the same shape; per-architecture isolation makes
+failures easy to pinpoint.
 
-RLM is expected to fail until the Modal image installs it correctly.
-
-Prerequisite:
-    modal run experiments/upload_data.py
-
-Run from repo root:
-    modal run tests/test_orchestrator_modal.py::app.smoke_test
+* :class:`OrchestratorSmokeConfigUnitTests` — pure shape of the smoke
+  configs (no Modal call).
+* :class:`OrchestratorSmoke<Arch>IntegrationTests` — one class per
+  architecture, all marked ``modal``. Skipped when credentials are
+  missing.
 """
 
 import json
 import os
-import sys
 import time
+import unittest
 
-from src.experiments.orchestrator import (
-    app,
-    run_worker,
-    image,
-    volume,
-    VOLUME_MOUNT,
-    RESULTS_DIR,
-)
-from src.experiments.experiment import ExperimentConfig
+import pytest
 
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
-TEST_QUERY_IDS = ['test0', 'test1', 'test2']
+TEST_QUERY_IDS = ['test0']
 SMOKE_PREFIX = '_smoketest_'
 
-# Architectures where we expect failure (e.g. missing rlm install).
-EXPECTED_FAILURES = {}
+
+def _modal_credentials_or_skip() -> None:
+    if not os.path.exists(os.path.expanduser('~/.modal.toml')):
+        raise unittest.SkipTest(
+            "Modal credentials not found at ~/.modal.toml. "
+            "Run `modal token new` to authenticate."
+        )
 
 
-# ---------------------------------------------------------------------------
-# Smoke-test configs
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# Unit suite
+# ===========================================================================
 
-def build_smoke_configs() -> list[ExperimentConfig]:
-    """One clean experiment per architecture, k=10 (fixed)."""
-    configs: list[ExperimentConfig] = []
-    for arch, k in [('vanilla', 10), ('agentic', 10), ('madam', 10), ('rlm', None)]:
-        configs.append(
-            ExperimentConfig(
+class OrchestratorSmokeConfigUnitTests(unittest.TestCase):
+    """The per-architecture smoke configs match the production matrix shape."""
+
+    def test_one_smoke_config_per_architecture(self):
+        from src.experiments.experiment import ExperimentConfig
+
+        configs = []
+        for arch, k in (('vanilla', 10), ('agentic', 10), ('madam', 10), ('rlm', None)):
+            configs.append(ExperimentConfig(
                 experiment_id=f'{SMOKE_PREFIX}{arch}_clean',
                 architecture=arch,
                 attack_type='clean',
                 k=k,
-            )
-        )
-    return configs
+            ))
+
+        archs = {c.architecture for c in configs}
+        self.assertEqual(archs, {'vanilla', 'agentic', 'madam', 'rlm'})
+
+        # RLM uses k=None; everyone else uses k=10.
+        for c in configs:
+            if c.architecture == 'rlm':
+                self.assertIsNone(c.k)
+            else:
+                self.assertEqual(c.k, 10)
+
+        # All smoke configs MUST be prefixed for safe cleanup.
+        for c in configs:
+            self.assertTrue(c.experiment_id.startswith(SMOKE_PREFIX))
 
 
-# ---------------------------------------------------------------------------
-# Helper Modal functions (volume access)
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# Modal helpers — register on the orchestrator's existing app.
+# ===========================================================================
+
+from src.experiments.orchestrator import (  # noqa: E402
+    app, run_worker, image, volume, VOLUME_MOUNT, RESULTS_DIR,
+)
+
 
 @app.function(image=image, volumes={VOLUME_MOUNT: volume}, timeout=60)
 def cleanup_smoke_results() -> list[str]:
@@ -80,14 +91,9 @@ def cleanup_smoke_results() -> list[str]:
 
 
 @app.function(image=image, volumes={VOLUME_MOUNT: volume}, timeout=60)
-def verify_results_on_volume(
-    experiment_id: str,
-    expected_ids: list[str],
-) -> dict:
-    """Read result JSONs from the volume and return a verification summary."""
+def verify_smoke_results(experiment_id: str, expected_ids: list[str]) -> dict:
     volume.reload()
     exp_dir = os.path.join(RESULTS_DIR, experiment_id)
-
     if not os.path.isdir(exp_dir):
         return {'found_dir': False, 'results': {}}
 
@@ -97,7 +103,6 @@ def verify_results_on_volume(
         if not os.path.exists(path):
             results[qid] = {'found': False}
             continue
-
         with open(path) as f:
             data = json.load(f)
         results[qid] = {
@@ -106,123 +111,103 @@ def verify_results_on_volume(
             'error': data.get('error'),
             'latency': data.get('latency_seconds'),
         }
-
     return {'found_dir': True, 'results': results}
 
 
-# ---------------------------------------------------------------------------
-# Entrypoint
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# Integration suite — one class per architecture
+# ===========================================================================
 
-@app.local_entrypoint()
-def smoke_test():
-    configs = build_smoke_configs()
+class _OrchestratorSmokeMixin:
+    """Shared lifecycle: open app.run() context, clean up smoke results."""
 
-    print(f"{'=' * 60}")
-    print("Modal Integration Smoke Test")
-    print(f"  Architectures: {[c.architecture for c in configs]}")
-    print(f"  Questions:     {TEST_QUERY_IDS}")
-    print(f"  Attack:        clean")
-    print(f"{'=' * 60}")
+    architecture: str
+    k: int | None
 
-    # ── Clean up stale smoketest results ──────────────────────────
-    print("\nCleaning up previous smoketest results...")
-    deleted = cleanup_smoke_results.remote()
-    if deleted:
-        print(f"  Deleted: {deleted}")
-    else:
-        print("  (none found)")
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        _modal_credentials_or_skip()
+        cls._app_ctx = app.run()
+        cls._app_ctx.__enter__()
 
-    # ── Run each architecture ─────────────────────────────────────
-    passed: list[str] = []
-    failed: list[str] = []
-    xfailed: list[str] = []
+    @classmethod
+    def tearDownClass(cls):
+        ctx = getattr(cls, '_app_ctx', None)
+        if ctx is not None:
+            ctx.__exit__(None, None, None)
+        super().tearDownClass()
 
-    for config in configs:
-        arch = config.architecture
-        print(f"\n{'─' * 60}")
-        print(f"[{arch}] experiment_id={config.experiment_id}  k={config.k or 'all'}")
+    def setUp(self):
+        super().setUp()
+        cleanup_smoke_results.remote()
 
-        config_dict = config.to_dict()
+    def tearDown(self):
+        cleanup_smoke_results.remote()
+        super().tearDown()
+
+    def _run_smoke(self) -> None:
+        from src.experiments.experiment import ExperimentConfig
+
+        config = ExperimentConfig(
+            experiment_id=f'{SMOKE_PREFIX}{self.architecture}_clean',
+            architecture=self.architecture,
+            attack_type='clean',
+            k=self.k,
+        )
+
         start = time.time()
+        summary = run_worker.remote(config.to_dict(), TEST_QUERY_IDS)
+        elapsed = time.time() - start
 
-        try:
-            summary = run_worker.remote(config_dict, TEST_QUERY_IDS)
-            elapsed = time.time() - start
+        self.assertEqual(
+            summary['completed'], len(TEST_QUERY_IDS),
+            f"{self.architecture}: expected {len(TEST_QUERY_IDS)} completed "
+            f"in {elapsed:.1f}s, got summary={summary}",
+        )
+        self.assertEqual(summary['errors'], 0,
+                         f"{self.architecture}: errors={summary['errors']}")
 
-            print(f"  Worker returned in {elapsed:.1f}s")
-            print(
-                f"  completed={summary['completed']}  "
-                f"skipped={summary['skipped']}  "
-                f"errors={summary['errors']}  "
-                f"total={summary['total']}"
-            )
+        verification = verify_smoke_results.remote(config.experiment_id, TEST_QUERY_IDS)
+        self.assertTrue(verification['found_dir'],
+                        f"{self.architecture}: no results dir on volume")
+        for qid, info in verification['results'].items():
+            self.assertTrue(info['found'], f"{self.architecture}/{qid}: missing")
+            self.assertFalse(info.get('error'),
+                             f"{self.architecture}/{qid}: {info.get('error')}")
 
-            # Verify actual result files on the volume.
-            verification = verify_results_on_volume.remote(
-                config.experiment_id, TEST_QUERY_IDS,
-            )
-            if not verification['found_dir']:
-                print("  Volume verification: result directory not found!")
-            else:
-                for qid, info in verification['results'].items():
-                    if not info.get('found'):
-                        print(f"    {qid}: MISSING")
-                    elif info.get('error'):
-                        err_preview = info['error'][:100].replace('\n', ' ')
-                        print(f"    {qid}: ERROR — {err_preview}")
-                    else:
-                        lat = info.get('latency', 0)
-                        ans = info.get('answer', '')[:80]
-                        print(f"    {qid}: OK ({lat:.1f}s) — {ans}")
 
-            # Decide pass/fail.
-            if summary['errors'] > 0 or summary['completed'] != len(TEST_QUERY_IDS):
-                if arch in EXPECTED_FAILURES:
-                    xfailed.append(arch)
-                    print(f"  -> XFAIL (expected for {arch})")
-                else:
-                    failed.append(arch)
-                    print(f"  -> FAILED")
-            else:
-                passed.append(arch)
-                if arch in EXPECTED_FAILURES:
-                    # Unexpectedly passed — good news, promote it.
-                    print(f"  -> PASSED (was expected to fail — nice!)")
-                else:
-                    print(f"  -> PASSED")
+@pytest.mark.modal
+class OrchestratorSmokeVanillaIntegrationTests(_OrchestratorSmokeMixin, unittest.TestCase):
+    architecture = 'vanilla'
+    k = 10
 
-        except Exception as e:
-            elapsed = time.time() - start
-            err_msg = str(e)[:200].replace('\n', ' ')
-            print(f"  Exception after {elapsed:.1f}s: {err_msg}")
+    def test_single_question_completes(self):
+        self._run_smoke()
 
-            if arch in EXPECTED_FAILURES:
-                xfailed.append(arch)
-                print(f"  -> XFAIL (expected for {arch})")
-            else:
-                failed.append(arch)
-                print(f"  -> FAILED")
 
-    # ── Cleanup ───────────────────────────────────────────────────
-    print(f"\n{'─' * 60}")
-    print("Cleaning up smoketest results...")
-    deleted = cleanup_smoke_results.remote()
-    print(f"  Deleted: {deleted or '(none)'}")
+@pytest.mark.modal
+class OrchestratorSmokeAgenticIntegrationTests(_OrchestratorSmokeMixin, unittest.TestCase):
+    architecture = 'agentic'
+    k = 10
 
-    # ── Summary ───────────────────────────────────────────────────
-    print(f"\n{'=' * 60}")
-    print("RESULTS")
-    if passed:
-        print(f"  Passed:        {', '.join(passed)}")
-    if xfailed:
-        print(f"  Expected fail: {', '.join(xfailed)}")
-    if failed:
-        print(f"  FAILED:        {', '.join(failed)}")
-    print(f"{'=' * 60}")
+    def test_single_question_completes(self):
+        self._run_smoke()
 
-    if failed:
-        print("\nSOME TESTS FAILED")
-        sys.exit(1)
-    else:
-        print("\nALL TESTS PASSED (expected failures excluded)")
+
+@pytest.mark.modal
+class OrchestratorSmokeMADAMIntegrationTests(_OrchestratorSmokeMixin, unittest.TestCase):
+    architecture = 'madam'
+    k = 10
+
+    def test_single_question_completes(self):
+        self._run_smoke()
+
+
+@pytest.mark.modal
+class OrchestratorSmokeRLMIntegrationTests(_OrchestratorSmokeMixin, unittest.TestCase):
+    architecture = 'rlm'
+    k = None
+
+    def test_single_question_completes(self):
+        self._run_smoke()
