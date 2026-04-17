@@ -286,7 +286,11 @@ class ScriptShellcheckUnitTests(unittest.TestCase):
     def test_shellcheck_clean(self):
         shellcheck = shutil.which('shellcheck')
         if shellcheck is None:
-            self.skipTest('shellcheck not installed (brew install shellcheck)')
+            # shellcheck-py is in requirements.txt and provides venv/bin/shellcheck;
+            # scripts/run_tests.sh prepends venv/bin to PATH so shutil.which finds it.
+            # Only skips if a user invokes pytest in some other way without venv/bin
+            # on PATH.
+            self.skipTest('shellcheck not on PATH (use scripts/run_tests.sh)')
         result = subprocess.run(
             [shellcheck, *[str(SCRIPTS_DIR / s) for s in ALL_SCRIPTS]],
             capture_output=True, text=True,

@@ -28,6 +28,11 @@ fi
 
 cd "${REPO_ROOT}"
 
+# Prepend venv/bin so tests can find CLIs installed as pip entry points
+# (e.g. shellcheck via shellcheck-py) via shutil.which() on $PATH without
+# requiring a separate brew install.
+export PATH="${REPO_ROOT}/venv/bin:${PATH}"
+
 mode="default"
 extra_args=()
 
