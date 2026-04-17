@@ -2,6 +2,7 @@ import os
 # quiet HF / transformers (must be done before importing transformers)
 os.environ['TRANSFORMERS_VERBOSITY'] = 'error'
 os.environ['HF_HUB_DISABLE_PROGRESS_BARS'] = '1'
+
 import torch
 import transformers
 import numpy as np
@@ -41,6 +42,7 @@ class Embedder:
 
 
 if __name__ == "__main__":
+    print("=== Sanity Check: embeddings ===")
     sentences = [
         "Where was Marie Curie born?",
         "Maria Sklodowska, later known as Marie Curie, was born on November 7, 1867.",

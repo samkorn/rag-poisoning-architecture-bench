@@ -1,0 +1,13 @@
+==> [1/4] setup_environment.sh
+    $ ${REPO_ROOT}/scripts/setup_environment.sh  (no --dry-run support; would execute)
+
+==> [2/4] download_data.sh
+    $ ${REPO_ROOT}/scripts/download_data.sh  (no --dry-run support; would execute)
+
+==> [3/4] run_analysis.sh
+    $ ${REPO_ROOT}/scripts/run_analysis.sh  (no --dry-run support; would execute)
+
+==> [4/4] generate_paper.sh
+    $ ${REPO_ROOT}/scripts/generate_paper.sh  (no --dry-run support; would execute)
+
+Done.

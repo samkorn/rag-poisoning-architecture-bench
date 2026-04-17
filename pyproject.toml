@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rag-poisoning-architecture-bench"
+version = "0.0.1"
+requires-python = ">=3.11"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+
+[tool.pytest.ini_options]
+# Hard cap on per-test runtime. Primary purpose: catch OpenMP / native-code
+# deadlocks (torch + faiss libomp double-load) fast, instead of hanging the
+# suite for hours. `timeout_method = "thread"` uses a watchdog thread, which
+# works even when the main thread is wedged in C code where Python signal
+# handlers can't run.
+timeout = 900
+timeout_method = "thread"

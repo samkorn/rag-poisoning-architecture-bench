@@ -1,21 +1,24 @@
-import sys
+import modal
 import os
 import time
 from typing import Optional
 from dataclasses import dataclass
 
-import logfire
+from openai import AsyncOpenAI
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.models.openai import OpenAIResponsesModel, OpenAIResponsesModelSettings
+from pydantic_ai.providers.openai import OpenAIProvider
 
-from qa_system import QASystem
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from embeddings.vector_store import VectorStore
+from src.architectures.qa_system import QASystem
+from src.architectures.utils import _LLM_CALL_TIMEOUT_SECONDS
+from src.embeddings.vector_store import VectorStore
 
 
-# logfire configuration
-logfire.configure(console=False)
-logfire.instrument_pydantic_ai() 
+# logfire configuration, run only if not in a Modal container
+if modal.is_local():
+    import logfire
+    logfire.configure(console=False)
+    logfire.instrument_pydantic_ai() 
 
 
 # ------------------------------------------------------------------
@@ -27,21 +30,22 @@ class AgenticRAGDeps:
     vector_store: VectorStore
     top_k: int
     query_id: Optional[str] = None
+    log_tag: str = ''
 
 
 def search_knowledge_base(
     ctx: RunContext[AgenticRAGDeps],
     question: str,
-    num_results: int = 5,
 ) -> str:
     """Search the knowledge base for documents relevant to a question."""
-    print(f">>> Searching knowledge base for question: {question}")
+    tag = ctx.deps.log_tag
+    print(f"{tag} >>> Searching knowledge base for question: {question}")
     retrieved_document_results = ctx.deps.vector_store.retrieve(
         question=question,
         top_k=ctx.deps.top_k,
         query_id=ctx.deps.query_id
     )
-    print(f">>> Retrieved {len(retrieved_document_results)} documents")
+    print(f"{tag} >>> Retrieved {len(retrieved_document_results)} documents")
     retrieved_documents = [str(result) for result in retrieved_document_results]
     context = "\n\n".join(retrieved_documents)
     return context
@@ -49,7 +53,8 @@ def search_knowledge_base(
 
 def get_document_by_id(ctx: RunContext[AgenticRAGDeps], doc_id: str) -> str:
     """Get a specific document by ID for closer reading."""
-    print(f">>> Getting document by ID: {doc_id}")
+    tag = ctx.deps.log_tag
+    print(f"{tag} >>> Getting document by ID: {doc_id}")
     doc_dict = ctx.deps.vector_store.get_document_from_doc_id(doc_id)
     formatted_doc = f"[{doc_id}] (title: {doc_dict['title']})\n{doc_dict['text']}"
     return formatted_doc
@@ -79,7 +84,12 @@ class AgenticRAG(QASystem):
             **kwargs
         )
         self.vector_store = VectorStore(self.corpus_type)
-        self.model = OpenAIResponsesModel(self.model_id)
+        # HTTP-level timeout on a pre-constructed AsyncOpenAI; SDK-default
+        # max_retries (2) is fine since no tenacity wrapper surrounds
+        # agent.run_sync.
+        self.openai_client = AsyncOpenAI(timeout=_LLM_CALL_TIMEOUT_SECONDS)
+        self.provider = OpenAIProvider(openai_client=self.openai_client)
+        self.model = OpenAIResponsesModel(self.model_id, provider=self.provider)
         if self.reasoning_effort or self.reasoning_summary:
             self.model_settings = OpenAIResponsesModelSettings(
                 openai_reasoning_effort=self.reasoning_effort,
@@ -99,7 +109,8 @@ class AgenticRAG(QASystem):
         deps = AgenticRAGDeps(
             vector_store=self.vector_store,
             top_k=self.top_k,
-            query_id=query_id
+            query_id=query_id,
+            log_tag=getattr(self, '_log_tag', ''),
         )
         result = self.agent.run_sync(question, deps=deps)
         return result.output

@@ -1,11 +1,11 @@
 """
-Build 3 FAISS indexes (original, naive-poisoned, adversarial-poisoned) from
+Build 3 FAISS indexes (original, naive-poisoned, corruptrag-ak-poisoned) from
 pre-computed Contriever embeddings.
 
-Indexes are saved to workspace/data/vector-store/ as:
-  - nq-original.faiss            + nq-original-doc-ids.pkl
-  - nq-naive-poisoned.faiss      + nq-naive-poisoned-doc-ids.pkl
-  - nq-adversarial-poisoned.faiss + nq-adversarial-poisoned-doc-ids.pkl
+Indexes are saved to src/data/vector-store/ as:
+  - nq-original.faiss                + nq-original-doc-ids.pkl
+  - nq-naive-poisoned.faiss          + nq-naive-poisoned-doc-ids.pkl
+  - nq-corruptrag-ak-poisoned.faiss  + nq-corruptrag-ak-poisoned-doc-ids.pkl
 
 Memory strategy: the ~8GB original embeddings dict is loaded once, stacked +
 normalized into a matrix, then the dict is freed. Poisoned indexes reuse the
@@ -15,8 +15,9 @@ original matrix and vstack the small poisoned vectors on top.
 import os
 import time
 import pickle
-import numpy as np
+
 import faiss
+import numpy as np
 
 
 VECTOR_STORE_DIR = os.path.join(os.path.dirname(__file__), '..', 'data', 'vector-store')
@@ -25,7 +26,7 @@ EMBEDDING_DIM = 768
 EMBEDDINGS_PATHS = {
     'original': os.path.join(VECTOR_STORE_DIR, 'nq-original-documents-embeddings.pkl'),
     'naive_poisoned': os.path.join(VECTOR_STORE_DIR, 'nq-naive-poisoned-documents-embeddings.pkl'),
-    'adversarial_poisoned': os.path.join(VECTOR_STORE_DIR, 'nq-adversarial-poisoned-documents-embeddings.pkl'),
+    'corruptrag_ak_poisoned': os.path.join(VECTOR_STORE_DIR, 'nq-corruptrag-ak-poisoned-documents-embeddings.pkl'),
 }
 
 INDEX_PATHS = {
@@ -37,9 +38,9 @@ INDEX_PATHS = {
         'index': os.path.join(VECTOR_STORE_DIR, 'nq-naive-poisoned.faiss'),
         'doc_ids': os.path.join(VECTOR_STORE_DIR, 'nq-naive-poisoned-doc-ids.pkl'),
     },
-    'adversarial_poisoned': {
-        'index': os.path.join(VECTOR_STORE_DIR, 'nq-adversarial-poisoned.faiss'),
-        'doc_ids': os.path.join(VECTOR_STORE_DIR, 'nq-adversarial-poisoned-doc-ids.pkl'),
+    'corruptrag_ak_poisoned': {
+        'index': os.path.join(VECTOR_STORE_DIR, 'nq-corruptrag-ak-poisoned.faiss'),
+        'doc_ids': os.path.join(VECTOR_STORE_DIR, 'nq-corruptrag-ak-poisoned-doc-ids.pkl'),
     },
 }
 
@@ -74,7 +75,13 @@ def _save_index(index: faiss.IndexFlatIP, doc_ids: list[str], corpus_type: str) 
     print(f"  Saved to {paths['index']}")
 
 
-if __name__ == '__main__':
+def build_all_indexes() -> None:
+    """Build all 3 FAISS indexes, loading the 8GB original embeddings only once.
+
+    Memory strategy: load the original dict, stack + normalize into a matrix
+    once, then drop the dict. The poisoned indexes reuse the original matrix
+    and just vstack the small poisoned vectors on top.
+    """
     t0 = time.time()
 
     # Load original embeddings and convert to normalized matrix once
@@ -85,43 +92,48 @@ if __name__ == '__main__':
     del original_dict  # free ~8 GB dict, keep ~8 GB matrix
     print(f"  Original matrix: {orig_matrix.shape}")
 
-    # 1. Original index
-    print("\n=== Building ORIGINAL index ===")
-    index = faiss.IndexFlatIP(EMBEDDING_DIM)
-    index.add(orig_matrix)
-    print(f"  Index size: {index.ntotal:,} vectors")
-    _save_index(index, orig_doc_ids, 'original')
-    del index
+    # TEMP: Commented out — these indexes already exist. Uncomment to rebuild.
+    # # 1. Original index
+    # print("\n=== Building ORIGINAL index ===")
+    # index = faiss.IndexFlatIP(EMBEDDING_DIM)
+    # index.add(orig_matrix)
+    # print(f"  Index size: {index.ntotal:,} vectors")
+    # _save_index(index, orig_doc_ids, 'original')
+    # del index
+    #
+    # # 2. Naive-poisoned index (original + naive poisoned docs)
+    # print("\n=== Building NAIVE-POISONED index ===")
+    # naive_dict = _load_pickle(EMBEDDINGS_PATHS['naive_poisoned'])
+    # naive_matrix, naive_doc_ids = _normalize_embeddings_dict(naive_dict)
+    # del naive_dict
+    # combined_matrix = np.vstack([orig_matrix, naive_matrix])
+    # combined_doc_ids = orig_doc_ids + naive_doc_ids
+    # print(f"  Combined: {orig_matrix.shape[0]:,} original + {naive_matrix.shape[0]:,} poisoned = {combined_matrix.shape[0]:,} total")
+    # del naive_matrix, naive_doc_ids
+    # index = faiss.IndexFlatIP(EMBEDDING_DIM)
+    # index.add(combined_matrix)
+    # print(f"  Index size: {index.ntotal:,} vectors")
+    # _save_index(index, combined_doc_ids, 'naive_poisoned')
+    # del index, combined_matrix, combined_doc_ids
 
-    # 2. Naive-poisoned index (original + naive poisoned docs)
-    print("\n=== Building NAIVE-POISONED index ===")
-    naive_dict = _load_pickle(EMBEDDINGS_PATHS['naive_poisoned'])
-    naive_matrix, naive_doc_ids = _normalize_embeddings_dict(naive_dict)
-    del naive_dict
-    combined_matrix = np.vstack([orig_matrix, naive_matrix])
-    combined_doc_ids = orig_doc_ids + naive_doc_ids
-    print(f"  Combined: {orig_matrix.shape[0]:,} original + {naive_matrix.shape[0]:,} poisoned = {combined_matrix.shape[0]:,} total")
-    del naive_matrix, naive_doc_ids
+    # 3. CorruptRAG-AK-poisoned index (original + corruptrag-ak poisoned docs)
+    print("\n=== Building CORRUPTRAG-AK-POISONED index ===")
+    crak_dict = _load_pickle(EMBEDDINGS_PATHS['corruptrag_ak_poisoned'])
+    crak_matrix, crak_doc_ids = _normalize_embeddings_dict(crak_dict)
+    del crak_dict
+    combined_matrix = np.vstack([orig_matrix, crak_matrix])
+    combined_doc_ids = orig_doc_ids + crak_doc_ids
+    print(f"  Combined: {orig_matrix.shape[0]:,} original + {crak_matrix.shape[0]:,} poisoned = {combined_matrix.shape[0]:,} total")
+    del crak_matrix, crak_doc_ids
     index = faiss.IndexFlatIP(EMBEDDING_DIM)
     index.add(combined_matrix)
     print(f"  Index size: {index.ntotal:,} vectors")
-    _save_index(index, combined_doc_ids, 'naive_poisoned')
-    del index, combined_matrix, combined_doc_ids
-
-    # 3. Adversarial-poisoned index (original + adversarial poisoned docs)
-    print("\n=== Building ADVERSARIAL-POISONED index ===")
-    adv_dict = _load_pickle(EMBEDDINGS_PATHS['adversarial_poisoned'])
-    adv_matrix, adv_doc_ids = _normalize_embeddings_dict(adv_dict)
-    del adv_dict
-    combined_matrix = np.vstack([orig_matrix, adv_matrix])
-    combined_doc_ids = orig_doc_ids + adv_doc_ids
-    print(f"  Combined: {orig_matrix.shape[0]:,} original + {adv_matrix.shape[0]:,} poisoned = {combined_matrix.shape[0]:,} total")
-    del adv_matrix, adv_doc_ids
-    index = faiss.IndexFlatIP(EMBEDDING_DIM)
-    index.add(combined_matrix)
-    print(f"  Index size: {index.ntotal:,} vectors")
-    _save_index(index, combined_doc_ids, 'adversarial_poisoned')
+    _save_index(index, combined_doc_ids, 'corruptrag_ak_poisoned')
     del index, combined_matrix, combined_doc_ids
 
     del orig_matrix, orig_doc_ids
     print(f"\nAll indexes built in {time.time() - t0:.1f}s")
+
+
+if __name__ == '__main__':
+    build_all_indexes()

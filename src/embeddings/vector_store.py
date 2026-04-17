@@ -1,7 +1,7 @@
 """
 Retrieve top-K documents from pre-built FAISS indexes.
 
-Supports 3 corpus types: original, naive_poisoned, adversarial_poisoned.
+Supports 3 corpus types: original, naive_poisoned, corruptrag_ak_poisoned.
 Uses pre-computed query embeddings when a query_id is provided (fast path),
 or falls back to live Contriever embedding (slow path).
 
@@ -11,7 +11,6 @@ Usage:
     results = vs.retrieve("some question", top_k=5)
 """
 
-import sys
 import os
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'  # faiss-cpu and PyTorch both ship OpenMP; suppress conflict
 import json
@@ -19,11 +18,12 @@ import time
 import pickle
 
 import torch  # must be imported before faiss to avoid segfault on Apple Silicon
+torch.set_num_threads(1)  # avoid OpenMP deadlock against faiss's libomp on macOS
 import faiss
 import numpy as np
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from data.utils import get_question_from_query_id
+from src.data.utils import get_question_from_query_id
+from src.embeddings import Embedder
 
 
 # Global path variables
@@ -41,26 +41,17 @@ INDEX_PATHS = {
         'index': os.path.join(VECTOR_STORE_DIR, 'nq-naive-poisoned.faiss'),
         'doc_ids': os.path.join(VECTOR_STORE_DIR, 'nq-naive-poisoned-doc-ids.pkl'),
     },
-    'adversarial_poisoned': {
-        'index': os.path.join(VECTOR_STORE_DIR, 'nq-adversarial-poisoned.faiss'),
-        'doc_ids': os.path.join(VECTOR_STORE_DIR, 'nq-adversarial-poisoned-doc-ids.pkl'),
+    'corruptrag_ak_poisoned': {
+        'index': os.path.join(VECTOR_STORE_DIR, 'nq-corruptrag-ak-poisoned.faiss'),
+        'doc_ids': os.path.join(VECTOR_STORE_DIR, 'nq-corruptrag-ak-poisoned-doc-ids.pkl'),
     },
 }
 CORPUS_PATHS = {
     'original': os.path.join(_DATA_BASE, 'original-datasets', 'nq', 'corpus.jsonl'),
     'naive_poisoned': os.path.join(_DATA_BASE, 'experiment-datasets', 'nq-naive-poisoning', 'corpus.jsonl'),
-    'adversarial_poisoned': os.path.join(_DATA_BASE, 'experiment-datasets', 'nq-adversarial-poisoning', 'corpus.jsonl'),
+    'corruptrag_ak_poisoned': os.path.join(_DATA_BASE, 'experiment-datasets', 'nq-corruptrag-ak-poisoning', 'corpus.jsonl'),
 }
 
-
-def _embed_query_live(query: str) -> np.ndarray:
-    from embeddings import Embedder
-    embedder = Embedder(gpu=False)
-    emb = np.ascontiguousarray(embedder.embed_single(query), dtype=np.float32)
-    if emb.ndim == 1:
-        emb = emb.reshape(1, -1)
-    faiss.normalize_L2(emb)
-    return emb
 
 
 class VectorStore:
@@ -109,11 +100,14 @@ class VectorStore:
 
         print(f"  Loading index ({corpus_type}) for VectorStore...")
         self._index, self._doc_ids = self._load_index()
+    
+        print("  Loading vector embedding model...")
+        self._embedder = Embedder(gpu=False)
 
         print(f"VectorStore('{corpus_type}') ready in {time.time() - t0:.1f}s\n")
 
     # ------------------------------------------------------------------
-    # VectorStore Loading Helpers
+    # VectorStore Helper Functions
     # ------------------------------------------------------------------
 
     @classmethod
@@ -150,16 +144,19 @@ class VectorStore:
             doc_ids = pickle.load(f)
         print(f"    FAISS index ({self.corpus_type}) loaded: {index.ntotal:,} vectors ({time.time() - t0:.1f}s)")
         return index, doc_ids
+    
+    def _embed_query_live(self, query: str) -> np.ndarray:
+        query_vec = self._embedder.embed_single(query)
+        query_vec = np.ascontiguousarray(query_vec, dtype=np.float32)
+        if query_vec.ndim == 1:
+            query_vec = query_vec.reshape(1, -1)
+        faiss.normalize_L2(query_vec) # in place normalization
+        return query_vec
 
     # ------------------------------------------------------------------
     # VectorStore Public API
     # ------------------------------------------------------------------
-
-    def get_document_from_doc_id(self, doc_id: str) -> dict:
-        if doc_id not in self._corpus:
-            raise ValueError(f"doc_id '{doc_id}' not found in corpus '{self.corpus_type}'")
-        return self._corpus[doc_id]
-
+    
     def retrieve(
         self,
         question: str,
@@ -189,7 +186,7 @@ class VectorStore:
                 raise KeyError(f"query_id '{query_id}' not found in pre-computed query embeddings")
         else:
             # if query_id is not provided, embed the question live
-            q_emb = _embed_query_live(question)
+            q_emb = self._embed_query_live(question)
 
         # search the index for the top-K documents
         scores, indices = self._index.search(q_emb, top_k)
@@ -208,20 +205,26 @@ class VectorStore:
                 'score': float(score),
             })
         return results
+    
+
+    def get_document_from_doc_id(self, doc_id: str) -> dict:
+        if doc_id not in self._corpus:
+            raise ValueError(f"doc_id '{doc_id}' not found in corpus '{self.corpus_type}'")
+        return self._corpus[doc_id]
 
 
 if __name__ == '__main__':
 
     print("=== Sanity check: retrieving for test0 across all 3 indexes ===\n")
     query_id = 'test0'
-    for corpus_type in ['original', 'naive_poisoned', 'adversarial_poisoned']:
+    for corpus_type in ['original', 'naive_poisoned', 'corruptrag_ak_poisoned']:
         print(f"--- {corpus_type} (top 5) ---")
         vs = VectorStore(corpus_type)
         print(f"Retrieving for query {query_id} in {corpus_type}...")
         t0 = time.time()
         question = get_question_from_query_id(query_id)
         results = vs.retrieve(question, top_k=5, query_id=query_id)
-        print(f"  Retrieved in {time.time() - t0:.2f}s\nRESULTS:")
+        print(f"  Retrieved in {time.time() - t0:.2f}s\n\nRESULTS:")
         for i, r in enumerate(results):
             is_poisoned = r['doc_id'].startswith('poisoned')
             marker = ' [POISONED]' if is_poisoned else ''
@@ -229,8 +232,8 @@ if __name__ == '__main__':
             print(f"     {r['text'][:120]}...")
         print()
 
-    print("=== Sanity check: retrieving for test0-4 for adversarial_poisoned index ===\n")
-    vs = VectorStore('adversarial_poisoned')
+    print("=== Sanity check: retrieving for test0-4 for corruptrag_ak_poisoned index ===\n")
+    vs = VectorStore('corruptrag_ak_poisoned')
     query_ids = ['test0', 'test1', 'test2', 'test3', 'test4']
     for query_id in query_ids:
         t0 = time.time()
