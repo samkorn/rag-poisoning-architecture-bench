@@ -1,4 +1,5 @@
-<h1 align="center">Architecture Matters:<br>Comparing RAG Systems under Knowledge Base Poisoning</h1>
+<h1 align="center">Architecture Matters</h1>
+<h3 align="center">Comparing RAG Systems under Knowledge Base Poisoning</h3>
 
 <p align="center">
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-blue.svg"></a>
