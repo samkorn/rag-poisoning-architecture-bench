@@ -25,6 +25,7 @@ _ANALYSIS_DIR = os.path.join(_REPO_ROOT, 'analysis')
 _PAPER_DIR = os.path.join(_REPO_ROOT, 'paper')
 _VENV_BIN = os.path.join(_REPO_ROOT, 'venv', 'bin')
 _PDFLATEX = '/Library/TeX/texbin/pdflatex'
+_BIBTEX = '/Library/TeX/texbin/bibtex'
 
 
 def _missing_data_skip_message(path: str) -> str:
@@ -148,7 +149,7 @@ class NotebookExecutionIntegrationTests(unittest.TestCase):
 
 @pytest.mark.integration
 class PaperCompilationIntegrationTests(unittest.TestCase):
-    """Two-pass pdflatex compilation of paper_draft_working.tex."""
+    """Full bibtex-aware compilation: pdflatex → bibtex → pdflatex → pdflatex."""
 
     @classmethod
     def setUpClass(cls):
@@ -158,6 +159,8 @@ class PaperCompilationIntegrationTests(unittest.TestCase):
             raise unittest.SkipTest(f"Missing TeX source: {tex_file}")
         if not os.path.exists(_PDFLATEX):
             raise unittest.SkipTest(f"pdflatex not installed at {_PDFLATEX}")
+        if not os.path.exists(_BIBTEX):
+            raise unittest.SkipTest(f"bibtex not installed at {_BIBTEX}")
 
         # Paper uses \graphicspath{{../analysis/figures/}}; every figure it
         # references must be on disk before the compile can succeed.
@@ -177,20 +180,58 @@ class PaperCompilationIntegrationTests(unittest.TestCase):
         cls.tex_file = tex_file
 
     def test_paper_compiles_and_produces_pdf(self):
-        for pass_num in (1, 2):
+        tex_basename = os.path.basename(self.tex_file)
+        stem = os.path.splitext(tex_basename)[0]
+        log_path = os.path.join(_PAPER_DIR, f'{stem}.log')
+
+        def run_pdflatex(pass_num: int):
             result = subprocess.run(
-                [_PDFLATEX, '-interaction=nonstopmode', os.path.basename(self.tex_file)],
-                capture_output=True,
-                text=True,
-                cwd=_PAPER_DIR,
+                [_PDFLATEX, '-interaction=nonstopmode', tex_basename],
+                capture_output=True, text=True, cwd=_PAPER_DIR,
             )
-            if result.returncode != 0 and pass_num == 2:
-                log_path = os.path.join(_PAPER_DIR, 'paper_draft_working.log')
+            if result.returncode != 0:
                 fatal = []
                 if os.path.exists(log_path):
                     with open(log_path) as f:
                         fatal = [l for l in f if l.startswith('! ')]
-                self.assertFalse(fatal, f"Fatal LaTeX errors: {fatal[:5]}")
+                self.assertFalse(
+                    fatal,
+                    f"Fatal LaTeX errors on pdflatex pass {pass_num}: {fatal[:5]}",
+                )
 
-        pdf_path = os.path.join(_PAPER_DIR, 'paper_draft_working.pdf')
+        # Pass 1: produces .aux with \citation entries for bibtex.
+        run_pdflatex(1)
+
+        # bibtex: consumes .aux, writes .bbl.
+        bib_result = subprocess.run(
+            [_BIBTEX, stem],
+            capture_output=True, text=True, cwd=_PAPER_DIR,
+        )
+        self.assertEqual(
+            bib_result.returncode, 0,
+            f"bibtex failed (rc={bib_result.returncode}): "
+            f"{bib_result.stdout}\n{bib_result.stderr}",
+        )
+
+        # Pass 2: picks up .bbl to resolve \cite{...}. Pass 3: resolves
+        # forward references (page numbers in citations) now that the
+        # bibliography has changed the page layout.
+        run_pdflatex(2)
+        run_pdflatex(3)
+
+        # pdflatex does not exit non-zero on undefined citations — it
+        # just emits a warning and prints '[?]'. Scan the log so a
+        # missing bibtex entry is a real test failure.
+        with open(log_path) as f:
+            log_lines = f.readlines()
+        undefined_cites = [
+            l.strip() for l in log_lines
+            if 'Citation' in l and 'undefined' in l
+        ]
+        self.assertFalse(
+            undefined_cites,
+            f"Undefined citations after bibtex: {undefined_cites[:5]}",
+        )
+
+        pdf_path = os.path.join(_PAPER_DIR, f'{stem}.pdf')
         self.assertTrue(os.path.exists(pdf_path), pdf_path)
