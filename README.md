@@ -103,11 +103,11 @@ rag-poisoning-architecture-bench/
 The eight scripts in [scripts/](scripts/) are the canonical entry points. They share a consistent interface: `--help` on any of them prints usage, `set -euo pipefail` everywhere, `--dry-run` on the expensive ones, and sensible prerequisite checks with "run X first" errors.
 
 ```mermaid
-flowchart TD
+flowchart LR
     setup[setup_environment.sh<br/><i>venv + pip install</i>]
 
     subgraph reproduce[Full reproduction]
-        direction TB
+        direction LR
         prepdata[prepare_data.sh<br/><i>NQ download + LLM poisoned docs</i><br/>~$80-130, ~30-60 min]
         prepemb[prepare_embeddings.sh<br/><i>Modal GPU embed + FAISS</i><br/>~$5-10, ~1-2 hr]
         runexp[run_experiments.sh<br/><i>12 experiments + judge + noise on Modal</i><br/>~$350-570, ~24 hr async]
@@ -115,7 +115,7 @@ flowchart TD
     end
 
     subgraph analyze[Analysis-only path]
-        direction TB
+        direction LR
         download[download_data.sh<br/><i>Zenodo bundle, ~40 MB</i>]
     end
 
