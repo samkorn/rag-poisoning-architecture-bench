@@ -247,7 +247,8 @@ def load_cached_results(
     the review data so the agreement report works without re-judging.
     Excludes NOISE questions.
     """
-    from src.data.utils import NOISE_QUESTION_IDS
+    from src.data.utils import get_noise_question_ids
+    noise_ids = get_noise_question_ids()
 
     # Build lookup for human labels.
     human_lookup = {}
@@ -260,7 +261,7 @@ def load_cached_results(
 
     results = []
     for row in review_data:
-        if row['question_id'] in NOISE_QUESTION_IDS:
+        if row['question_id'] in noise_ids:
             continue
         exp_dir = os.path.join(output_dir, row['experiment_id'])
         judge_path = os.path.join(exp_dir, f"{row['question_id']}.json")
@@ -290,14 +291,15 @@ def build_agreement_report(judge_results: list[dict], review_data: list[dict]) -
     """
     import numpy as np
 
-    from src.data.utils import NOISE_QUESTION_IDS
+    from src.data.utils import get_noise_question_ids
+    noise_ids = get_noise_question_ids()
 
     lines: list[str] = []
     w = lines.append  # shorthand
 
     # Filter NOISE questions from both inputs.
-    judge_results = [r for r in judge_results if r.get('question_id') not in NOISE_QUESTION_IDS]
-    review_data = [r for r in review_data if r.get('question_id') not in NOISE_QUESTION_IDS]
+    judge_results = [r for r in judge_results if r.get('question_id') not in noise_ids]
+    review_data = [r for r in review_data if r.get('question_id') not in noise_ids]
 
     # Build lookup for human labels.
     human_labels = {}
