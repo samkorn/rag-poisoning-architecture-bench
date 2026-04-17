@@ -21,8 +21,14 @@ EXPECTED_TIMEOUT = 180.0
 class ClientTimeoutUnitTests(unittest.TestCase):
     """Each architecture's OpenAI client construction includes timeout=180."""
 
-    def test_vanilla_client_has_timeout(self):
-        """execute_llm_call constructs OpenAI() with timeout set."""
+    def test_execute_llm_call_client_has_timeout(self):
+        """execute_llm_call constructs OpenAI() with timeout set.
+
+        Covers both Vanilla RAG and MADAM-RAG, which share the
+        ``src.architectures.utils.execute_llm_call`` path for every
+        model invocation. Agentic and RLM construct their own clients
+        through different paths and have dedicated tests below.
+        """
         captured: dict = {}
 
         def capturing_init(self, *args, **kwargs):
