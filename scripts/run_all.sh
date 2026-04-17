@@ -6,32 +6,22 @@
 # Expected wall time: multi-day end-to-end, dominated by experiments on
 # Modal ($280-440 OpenAI spend) + embeddings ($5-10 GPU).
 #
-# This script does NOT call download_data.sh. Use that instead if you only
-# want the "analysis-only" path:
-#     scripts/setup_environment.sh
-#     scripts/download_data.sh
-#     scripts/run_analysis.sh
-#     scripts/generate_paper.sh
+# Default mode runs the synchronous, local stages (env + data + embeddings)
+# then launches the experiment orchestrator on Modal detached and exits.
+# Judge, noise, analysis, and paper aren't launched here — they depend on
+# the orchestrator completing, which can take ~24h. The closing banner
+# prints the exact follow-up commands; re-invoke with --resume once
+# experiments + judge + noise have all finished to run analysis + paper.
 #
-# NOTE on step 4 (experiments): run_experiments.sh launches the judge and
-# noise passes as --detach immediately after the orchestrator launch. They
-# query the Modal Volume for results, so if the orchestrator isn't finished
-# yet they will skip un-judged questions. For a clean end-to-end run you
-# should instead invoke the phases sequentially:
-#     scripts/run_experiments.sh --experiments
-#     # (wait for orchestrator to finish — monitor `modal app logs rag-poisoning-bench`)
-#     scripts/run_experiments.sh --judge
-#     scripts/run_experiments.sh --noise
-#     # then run analysis + paper.
-#
-# Because of that asynchronous gap, this script stops after launching
-# experiments and prints the resume instructions. Re-invoke with --resume
-# once experiments + judge + noise have all finished.
+# --analysis-only skips regenerating experiment results and instead
+# pulls them from Zenodo (~40 MB), then runs analysis + paper. Good when
+# you want a fresh figure/table pass without rerunning Modal.
 #
 # Usage:
-#   scripts/run_all.sh                 # env -> data -> embeddings -> launch experiments
-#   scripts/run_all.sh --resume        # analysis + paper (after Modal runs are done)
-#   scripts/run_all.sh --dry-run       # print what every downstream script would do
+#   scripts/run_all.sh                   # env -> data -> embeddings -> launch experiments
+#   scripts/run_all.sh --resume          # analysis + paper (after Modal runs are done)
+#   scripts/run_all.sh --analysis-only   # env -> download Zenodo data -> analysis + paper
+#   scripts/run_all.sh --dry-run         # print what every downstream script would do
 #   scripts/run_all.sh --help
 
 set -euo pipefail
@@ -41,15 +31,22 @@ show_help() {
 }
 
 resume=0
+analysis_only=0
 DRY_RUN=0
 for arg in "$@"; do
     case "${arg}" in
-        --help|-h) show_help; exit 0 ;;
-        --resume)  resume=1 ;;
-        --dry-run) DRY_RUN=1 ;;
-        *)         echo "ERROR: unknown arg '${arg}'" >&2; show_help >&2; exit 2 ;;
+        --help|-h)       show_help; exit 0 ;;
+        --resume)        resume=1 ;;
+        --analysis-only) analysis_only=1 ;;
+        --dry-run)       DRY_RUN=1 ;;
+        *)               echo "ERROR: unknown arg '${arg}'" >&2; show_help >&2; exit 2 ;;
     esac
 done
+
+if [[ "${resume}" == "1" && "${analysis_only}" == "1" ]]; then
+    echo "ERROR: --resume and --analysis-only are mutually exclusive" >&2
+    exit 2
+fi
 
 REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 cd "${REPO_ROOT}"
@@ -72,6 +69,34 @@ if [[ "${resume}" == "1" ]]; then
         echo "    \$ ${SCRIPTS}/run_analysis.sh    (no --dry-run support; would execute)"
         echo "    \$ ${SCRIPTS}/generate_paper.sh  (no --dry-run support; would execute)"
     fi
+    echo
+    echo "Done."
+    exit 0
+fi
+
+if [[ "${analysis_only}" == "1" ]]; then
+    # None of the four downstream scripts here implement --dry-run, so
+    # DRY_RUN collapses to "show the invocation and skip".
+    run_or_echo() {
+        local script_path="$1"
+        if [[ "${DRY_RUN}" == "0" ]]; then
+            "${script_path}"
+        else
+            echo "    \$ ${script_path}  (no --dry-run support; would execute)"
+        fi
+    }
+
+    echo "==> [1/4] setup_environment.sh"
+    run_or_echo "${SCRIPTS}/setup_environment.sh"
+    echo
+    echo "==> [2/4] download_data.sh"
+    run_or_echo "${SCRIPTS}/download_data.sh"
+    echo
+    echo "==> [3/4] run_analysis.sh"
+    run_or_echo "${SCRIPTS}/run_analysis.sh"
+    echo
+    echo "==> [4/4] generate_paper.sh"
+    run_or_echo "${SCRIPTS}/generate_paper.sh"
     echo
     echo "Done."
     exit 0

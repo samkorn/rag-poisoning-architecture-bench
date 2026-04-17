@@ -173,6 +173,15 @@ class ScriptUnknownArgUnitTests(unittest.TestCase):
                 self.assertIn('unknown arg', result.stderr)
 
 
+class ScriptRunAllMutexUnitTests(unittest.TestCase):
+    """``run_all.sh`` rejects combined flags that don't make sense together."""
+
+    def test_resume_and_analysis_only_mutex(self):
+        result = _run('run_all.sh', '--resume', '--analysis-only')
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('mutually exclusive', result.stderr)
+
+
 class ScriptDryRunGoldenUnitTests(unittest.TestCase):
     """``--dry-run`` output is byte-identical to the pinned golden file.
 
@@ -193,29 +202,41 @@ class ScriptDryRunGoldenUnitTests(unittest.TestCase):
     def tearDown(self) -> None:
         self._tmpdir.cleanup()
 
+    def _assert_golden(self, script: str, *args: str, golden_name: str) -> None:
+        result = _run(
+            script, *args,
+            env_overrides={'REPO_ROOT': str(self._fake_root)},
+        )
+        self.assertEqual(
+            result.returncode, 0,
+            f"{script} {' '.join(args)}: exit {result.returncode}\n"
+            f"stderr: {result.stderr}",
+        )
+        actual = result.stdout.replace(str(self._fake_root), '${REPO_ROOT}')
+        golden_path = GOLDEN_DIR / golden_name
+        self.assertEqual(
+            actual, golden_path.read_text(),
+            f"{script} {' '.join(args)}: output diverges from {golden_path.name}.\n"
+            f"To regenerate (after reviewing):\n"
+            f"  scripts/{script} {' '.join(args)} > tests/golden/scripts/{golden_name}"
+        )
+
     def test_dry_run_matches_golden(self):
         for script in DRY_RUN_SCRIPTS:
             with self.subTest(script=script):
-                result = _run(
+                self._assert_golden(
                     script, '--dry-run',
-                    env_overrides={'REPO_ROOT': str(self._fake_root)},
+                    golden_name=f'{script}.dry-run.txt',
                 )
-                self.assertEqual(
-                    result.returncode, 0,
-                    f"{script}: exit {result.returncode}\n"
-                    f"stderr: {result.stderr}",
-                )
-                actual = result.stdout.replace(
-                    str(self._fake_root), '${REPO_ROOT}',
-                )
-                golden_path = GOLDEN_DIR / f'{script}.dry-run.txt'
-                golden = golden_path.read_text()
-                self.assertEqual(
-                    actual, golden,
-                    f"{script}: dry-run output diverges from {golden_path.name}.\n"
-                    f"To regenerate (after reviewing):\n"
-                    f"  scripts/{script} --dry-run > tests/golden/scripts/{script}.dry-run.txt"
-                )
+
+    def test_analysis_only_dry_run_matches_golden(self):
+        """``run_all.sh --analysis-only --dry-run`` cascades through the
+        4 analysis-path scripts (env → download → analysis → paper)
+        without touching Modal."""
+        self._assert_golden(
+            'run_all.sh', '--analysis-only', '--dry-run',
+            golden_name='run_all.sh.analysis-only.dry-run.txt',
+        )
 
 
 class ScriptPrereqFailureUnitTests(unittest.TestCase):
