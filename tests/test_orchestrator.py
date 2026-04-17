@@ -118,19 +118,19 @@ class IsExperimentCompleteUnitTests(unittest.TestCase):
         super().setUp()
         self.tmp_dir = tempfile.mkdtemp(prefix='rag_orch_test_')
 
-        # is_experiment_complete reads RESULTS_DIR at the module level —
+        # is_experiment_complete reads EXPERIMENTS_DIR at the module level —
         # monkey-patch it to point at the tempdir for the duration of the test.
         import src.experiments.orchestrator as orch_mod
         self._orch_mod = orch_mod
-        self._orig_results_dir = orch_mod.RESULTS_DIR
-        orch_mod.RESULTS_DIR = self.tmp_dir
+        self._orig_experiments_dir = orch_mod.EXPERIMENTS_DIR
+        orch_mod.EXPERIMENTS_DIR = self.tmp_dir
 
         self.exp_id = 'test_vanilla_clean'
         self.n_questions = 10
         self.exp_dir = os.path.join(self.tmp_dir, self.exp_id)
 
     def tearDown(self):
-        self._orch_mod.RESULTS_DIR = self._orig_results_dir
+        self._orch_mod.EXPERIMENTS_DIR = self._orig_experiments_dir
         shutil.rmtree(self.tmp_dir, ignore_errors=True)
         super().tearDown()
 

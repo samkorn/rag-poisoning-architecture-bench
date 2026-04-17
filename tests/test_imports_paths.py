@@ -163,11 +163,15 @@ class ModulePathsIntegrationTests(unittest.TestCase):
         self.assertTrue(os.path.exists(qe))
 
     def test_experiment_path_constants_resolve(self):
-        from src.experiments.llm_judge import RESULTS_DIR, JUDGE_RESULTS_DIR, load_judge_prompt
+        from src.experiments.llm_judge import (
+            RESULTS_DIR, EXPERIMENTS_DIR, JUDGE_RESULTS_DIR, load_judge_prompt,
+        )
         from src.experiments.noise_filter import QUESTIONS_PATH, NOISE_OUTPUT_DIR
         from src.experiments.run_judge_local import REVIEW_CSV, _RESULTS_DIR
 
         self.assertTrue(os.path.isdir(RESULTS_DIR))
+        self.assertTrue(os.path.isdir(EXPERIMENTS_DIR))
+        self.assertEqual(os.path.dirname(EXPERIMENTS_DIR), RESULTS_DIR)
         self.assertTrue(os.path.isdir(JUDGE_RESULTS_DIR))
         self.assertTrue(os.path.isdir(NOISE_OUTPUT_DIR))
         self.assertTrue(os.path.isdir(_RESULTS_DIR))
@@ -180,6 +184,8 @@ class ModulePathsIntegrationTests(unittest.TestCase):
         self.assertIn('{', user_template)
 
         for exp_id in ('vanilla_clean', 'madam_corruptrag_ak'):
+            exp_dir = os.path.join(EXPERIMENTS_DIR, exp_id)
+            self.assertTrue(os.path.isdir(exp_dir), f"missing experiment dir: {exp_id}")
             judge_exp_dir = os.path.join(JUDGE_RESULTS_DIR, exp_id)
             self.assertTrue(os.path.isdir(judge_exp_dir), f"missing judge dir: {exp_id}")
             n = len([f for f in os.listdir(judge_exp_dir) if f.endswith('.json')])

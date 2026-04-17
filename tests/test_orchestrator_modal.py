@@ -71,7 +71,7 @@ class OrchestratorSmokeConfigUnitTests(unittest.TestCase):
 # ===========================================================================
 
 from src.experiments.orchestrator import (  # noqa: E402
-    app, run_worker, image, volume, VOLUME_MOUNT, RESULTS_DIR,
+    app, run_worker, image, volume, VOLUME_MOUNT, EXPERIMENTS_DIR,
 )
 
 
@@ -81,10 +81,10 @@ def cleanup_smoke_results() -> list[str]:
     import shutil
 
     deleted: list[str] = []
-    if os.path.isdir(RESULTS_DIR):
-        for name in os.listdir(RESULTS_DIR):
+    if os.path.isdir(EXPERIMENTS_DIR):
+        for name in os.listdir(EXPERIMENTS_DIR):
             if name.startswith(SMOKE_PREFIX):
-                shutil.rmtree(os.path.join(RESULTS_DIR, name))
+                shutil.rmtree(os.path.join(EXPERIMENTS_DIR, name))
                 deleted.append(name)
     volume.commit()
     return deleted
@@ -93,7 +93,7 @@ def cleanup_smoke_results() -> list[str]:
 @app.function(image=image, volumes={VOLUME_MOUNT: volume}, timeout=60)
 def verify_smoke_results(experiment_id: str, expected_ids: list[str]) -> dict:
     volume.reload()
-    exp_dir = os.path.join(RESULTS_DIR, experiment_id)
+    exp_dir = os.path.join(EXPERIMENTS_DIR, experiment_id)
     if not os.path.isdir(exp_dir):
         return {'found_dir': False, 'results': {}}
 
