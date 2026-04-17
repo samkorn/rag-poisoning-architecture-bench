@@ -27,7 +27,7 @@ _REPO_ROOT = os.path.normpath(
 # One question is enough to verify end-to-end behavior — the batch
 # checkpoint/resume test is the only scenario where we need more than one.
 TEST_QUERY_ID = 'test0'
-BATCH_BATCH_TEST_QUERY_IDS = ['test0', 'test1', 'test2']
+BATCH_TEST_QUERY_IDS = ['test0', 'test1', 'test2']
 
 
 def _data_present_or_skip() -> str:

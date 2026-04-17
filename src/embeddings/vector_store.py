@@ -18,6 +18,7 @@ import time
 import pickle
 
 import torch  # must be imported before faiss to avoid segfault on Apple Silicon
+torch.set_num_threads(1)  # avoid OpenMP deadlock against faiss's libomp on macOS
 import faiss
 import numpy as np
 

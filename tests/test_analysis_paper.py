@@ -4,9 +4,13 @@
   and verify it parses (catches accidental JSON corruption). No data,
   no execution.
 * :class:`NotebookExecutionIntegrationTests` — execute the notebook end
-  to end via nbconvert; verify every figure the paper references is
-  produced and the merged-results parquet is written.
-* :class:`PaperCompilationIntegrationTests` — two-pass pdflatex.
+  to end in a disposable tmpdir mirror tree, verify every figure the
+  paper references is produced and the merged-results parquet is
+  written. Never touches committed figures/tables in the real tree.
+* :class:`PaperCompilationIntegrationTests` — pdflatex + bibtex in a
+  disposable tmpdir mirror tree; reads committed figures and tables
+  from the real tree via symlinks, writes all build artifacts to the
+  tmpdir. Never touches the committed paper PDF.
 """
 
 import os
@@ -23,8 +27,10 @@ _REPO_ROOT = os.path.normpath(
 )
 _ANALYSIS_DIR = os.path.join(_REPO_ROOT, 'analysis')
 _PAPER_DIR = os.path.join(_REPO_ROOT, 'paper')
+_SRC_DIR = os.path.join(_REPO_ROOT, 'src')
 _VENV_BIN = os.path.join(_REPO_ROOT, 'venv', 'bin')
 _PDFLATEX = '/Library/TeX/texbin/pdflatex'
+_BIBTEX = '/Library/TeX/texbin/bibtex'
 
 
 def _missing_data_skip_message(path: str) -> str:
@@ -36,12 +42,33 @@ def _missing_data_skip_message(path: str) -> str:
 
 
 def _paper_figure_filenames() -> list[str]:
-    """Parse paper_draft_working.tex for every \\includegraphics target."""
-    tex_path = os.path.join(_PAPER_DIR, 'paper_draft_working.tex')
+    """Parse paper.tex for every \\includegraphics target."""
+    tex_path = os.path.join(_PAPER_DIR, 'paper.tex')
     with open(tex_path) as f:
         tex = f.read()
-    # \includegraphics[...]{filename.pdf}
     return sorted(set(re.findall(r'\\includegraphics(?:\[[^\]]*\])?\{([^}]+)\}', tex)))
+
+
+def _build_mirror_tree(tmp_root: str, spec: dict[str, str | None]) -> None:
+    """Populate ``tmp_root`` with symlinks to real inputs and empty dirs.
+
+    ``spec`` maps relative paths inside ``tmp_root`` to either:
+      * an absolute source path to symlink to (file or directory), or
+      * ``None`` to create an empty directory there.
+
+    Parent directories are auto-created. Used to construct a sandbox
+    that looks like a subset of the real repo tree from the compiler /
+    nbconvert's perspective, so all writes land in ``tmp_root`` while
+    reads follow symlinks to the real inputs.
+    """
+    for rel, src in spec.items():
+        rel = rel.rstrip('/')
+        target = os.path.join(tmp_root, rel)
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        if src is None:
+            os.makedirs(target, exist_ok=True)
+        else:
+            os.symlink(src, target)
 
 
 # ===========================================================================
@@ -60,7 +87,6 @@ class NotebookValidityUnitTests(unittest.TestCase):
         with open(notebook_path) as f:
             nb = nbformat.read(f, as_version=4)
 
-        # Raises nbformat.ValidationError if the notebook is malformed.
         nbformat.validate(nb)
         self.assertGreater(len(nb.cells), 5)
 
@@ -71,7 +97,12 @@ class NotebookValidityUnitTests(unittest.TestCase):
 
 @pytest.mark.integration
 class NotebookExecutionIntegrationTests(unittest.TestCase):
-    """Run analysis.ipynb via nbconvert and verify outputs."""
+    """Execute analysis.ipynb in a mirror-tree tmpdir and verify outputs.
+
+    Everything the notebook writes — figures, tables, parquet, and the
+    executed notebook copy — lands in the tmpdir. Committed files in
+    ``analysis/figures/`` and ``paper/tables/`` are never touched.
+    """
 
     @classmethod
     def setUpClass(cls):
@@ -80,7 +111,6 @@ class NotebookExecutionIntegrationTests(unittest.TestCase):
         if not os.path.exists(notebook_path):
             raise unittest.SkipTest(f"Missing notebook: {notebook_path}")
 
-        # Notebook reads from these paths (see analysis.ipynb).
         required = [
             os.path.join(_ANALYSIS_DIR, 'human_labels.csv'),
             os.path.join(_REPO_ROOT, 'src', 'experiments', 'results'),
@@ -97,14 +127,17 @@ class NotebookExecutionIntegrationTests(unittest.TestCase):
         cls.notebook_path = notebook_path
 
     def test_notebook_executes_and_produces_outputs(self):
-        # Run nbconvert into a temp output filename so we don't clobber the
-        # committed notebook.
-        with tempfile.NamedTemporaryFile(
-            suffix='.ipynb', delete=False, dir=_ANALYSIS_DIR,
-        ) as tmp:
-            output_path = tmp.name
+        with tempfile.TemporaryDirectory(prefix='nb_exec_') as tmp_root:
+            _build_mirror_tree(tmp_root, {
+                'analysis/analysis.ipynb': self.notebook_path,
+                'analysis/human_labels.csv': os.path.join(_ANALYSIS_DIR, 'human_labels.csv'),
+                'analysis/figures': None,
+                'analysis/intermediate': None,
+                'src': _SRC_DIR,
+                'paper/tables': None,
+            })
+            tmp_analysis = os.path.join(tmp_root, 'analysis')
 
-        try:
             jupyter = os.path.join(_VENV_BIN, 'jupyter')
             result = subprocess.run(
                 [
@@ -112,12 +145,12 @@ class NotebookExecutionIntegrationTests(unittest.TestCase):
                     '--to', 'notebook',
                     '--execute',
                     '--ExecutePreprocessor.timeout=600',
-                    self.notebook_path,
-                    '--output', os.path.basename(output_path),
+                    'analysis.ipynb',
+                    '--output', 'executed.ipynb',
                 ],
                 capture_output=True,
                 text=True,
-                cwd=_ANALYSIS_DIR,
+                cwd=tmp_analysis,
                 env={**os.environ, 'KMP_DUPLICATE_LIB_OK': 'TRUE'},
             )
             self.assertEqual(
@@ -125,10 +158,8 @@ class NotebookExecutionIntegrationTests(unittest.TestCase):
                 f"Notebook execution failed: {result.stderr[-500:]}",
             )
 
-            # Every \includegraphics target in the paper must exist on disk.
-            figures_dir = os.path.join(_ANALYSIS_DIR, 'figures')
-            self.assertTrue(os.path.isdir(figures_dir), figures_dir)
-            generated = set(os.listdir(figures_dir))
+            tmp_figures = os.path.join(tmp_analysis, 'figures')
+            generated = set(os.listdir(tmp_figures))
 
             expected = _paper_figure_filenames()
             self.assertGreater(len(expected), 5, "no figures parsed from paper.tex")
@@ -139,28 +170,41 @@ class NotebookExecutionIntegrationTests(unittest.TestCase):
                 f"Notebook didn't produce {len(missing)} paper-referenced figure(s): {missing}",
             )
 
-            parquet_path = os.path.join(_ANALYSIS_DIR, 'intermediate', 'merged_results.parquet')
+            parquet_path = os.path.join(tmp_analysis, 'intermediate', 'merged_results.parquet')
             self.assertTrue(os.path.exists(parquet_path), parquet_path)
-        finally:
-            if os.path.exists(output_path):
-                os.unlink(output_path)
+
+            # Tables are \input{...}'d by the paper; every .tex the
+            # paper asks for must be produced by the notebook.
+            tmp_tables = os.path.join(tmp_root, 'paper', 'tables')
+            expected_tables = set(os.listdir(os.path.join(_PAPER_DIR, 'tables')))
+            generated_tables = set(os.listdir(tmp_tables))
+            missing_tables = expected_tables - generated_tables
+            self.assertFalse(
+                missing_tables,
+                f"Notebook didn't produce expected table(s): {sorted(missing_tables)}",
+            )
 
 
 @pytest.mark.integration
 class PaperCompilationIntegrationTests(unittest.TestCase):
-    """Two-pass pdflatex compilation of paper_draft_working.tex."""
+    """Full bibtex-aware compile in a mirror-tree tmpdir.
+
+    Build sequence: pdflatex → bibtex → pdflatex → pdflatex. All
+    artifacts (.aux, .log, .bbl, .blg, .pdf, .out) land in the
+    tmpdir. Committed figures and tables are read via symlinks.
+    """
 
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        tex_file = os.path.join(_PAPER_DIR, 'paper_draft_working.tex')
+        tex_file = os.path.join(_PAPER_DIR, 'paper.tex')
         if not os.path.exists(tex_file):
             raise unittest.SkipTest(f"Missing TeX source: {tex_file}")
         if not os.path.exists(_PDFLATEX):
             raise unittest.SkipTest(f"pdflatex not installed at {_PDFLATEX}")
+        if not os.path.exists(_BIBTEX):
+            raise unittest.SkipTest(f"bibtex not installed at {_BIBTEX}")
 
-        # Paper uses \graphicspath{{../analysis/figures/}}; every figure it
-        # references must be on disk before the compile can succeed.
         figures_dir = os.path.join(_ANALYSIS_DIR, 'figures')
         if not os.path.isdir(figures_dir):
             raise unittest.SkipTest(_missing_data_skip_message(figures_dir))
@@ -177,20 +221,67 @@ class PaperCompilationIntegrationTests(unittest.TestCase):
         cls.tex_file = tex_file
 
     def test_paper_compiles_and_produces_pdf(self):
-        for pass_num in (1, 2):
-            result = subprocess.run(
-                [_PDFLATEX, '-interaction=nonstopmode', os.path.basename(self.tex_file)],
-                capture_output=True,
-                text=True,
-                cwd=_PAPER_DIR,
-            )
-            if result.returncode != 0 and pass_num == 2:
-                log_path = os.path.join(_PAPER_DIR, 'paper_draft_working.log')
-                fatal = []
-                if os.path.exists(log_path):
-                    with open(log_path) as f:
-                        fatal = [l for l in f if l.startswith('! ')]
-                self.assertFalse(fatal, f"Fatal LaTeX errors: {fatal[:5]}")
+        tex_basename = os.path.basename(self.tex_file)
+        stem = os.path.splitext(tex_basename)[0]
 
-        pdf_path = os.path.join(_PAPER_DIR, 'paper_draft_working.pdf')
-        self.assertTrue(os.path.exists(pdf_path), pdf_path)
+        with tempfile.TemporaryDirectory(prefix='paper_build_') as tmp_root:
+            _build_mirror_tree(tmp_root, {
+                f'paper/{tex_basename}': self.tex_file,
+                'paper/references.bib': os.path.join(_PAPER_DIR, 'references.bib'),
+                'paper/tables': os.path.join(_PAPER_DIR, 'tables'),
+                'analysis/figures': os.path.join(_ANALYSIS_DIR, 'figures'),
+            })
+            tmp_paper = os.path.join(tmp_root, 'paper')
+            log_path = os.path.join(tmp_paper, f'{stem}.log')
+
+            def run_pdflatex(pass_num: int):
+                result = subprocess.run(
+                    [_PDFLATEX, '-interaction=nonstopmode', tex_basename],
+                    capture_output=True, text=True, cwd=tmp_paper,
+                )
+                if result.returncode != 0:
+                    fatal = []
+                    if os.path.exists(log_path):
+                        with open(log_path) as f:
+                            fatal = [l for l in f if l.startswith('! ')]
+                    self.assertFalse(
+                        fatal,
+                        f"Fatal LaTeX errors on pdflatex pass {pass_num}: {fatal[:5]}",
+                    )
+
+            # Pass 1: produces .aux with \citation entries for bibtex.
+            run_pdflatex(1)
+
+            # bibtex: consumes .aux, writes .bbl.
+            bib_result = subprocess.run(
+                [_BIBTEX, stem],
+                capture_output=True, text=True, cwd=tmp_paper,
+            )
+            self.assertEqual(
+                bib_result.returncode, 0,
+                f"bibtex failed (rc={bib_result.returncode}): "
+                f"{bib_result.stdout}\n{bib_result.stderr}",
+            )
+
+            # Pass 2: picks up .bbl to resolve \cite{...}. Pass 3:
+            # resolves forward references (page numbers in citations)
+            # now that the bibliography has changed the page layout.
+            run_pdflatex(2)
+            run_pdflatex(3)
+
+            # pdflatex does not exit non-zero on undefined citations
+            # — it just emits a warning and prints '[?]'. Scan the
+            # log so a missing bibtex entry is a real test failure.
+            with open(log_path) as f:
+                log_lines = f.readlines()
+            undefined_cites = [
+                l.strip() for l in log_lines
+                if 'Citation' in l and 'undefined' in l
+            ]
+            self.assertFalse(
+                undefined_cites,
+                f"Undefined citations after bibtex: {undefined_cites[:5]}",
+            )
+
+            pdf_path = os.path.join(tmp_paper, f'{stem}.pdf')
+            self.assertTrue(os.path.exists(pdf_path), pdf_path)

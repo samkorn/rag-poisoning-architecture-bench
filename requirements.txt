@@ -37,3 +37,6 @@ tiktoken
 logfire
 seaborn
 scipy
+
+# Testing
+pytest-timeout
