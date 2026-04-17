@@ -2,12 +2,13 @@
 
 * :class:`JudgeHelpersUnitTests` — pure-Python text-matching helpers
   (``_normalize_text``, ``check_target_substring``). No data, no API.
-* :class:`JudgePromptIntegrationTests` — verify the markdown prompt file
-  loads and has the expected placeholders.
+* :class:`JudgePromptUnitTests` — verify the markdown prompt file loads
+  and has the expected placeholders. The prompt is committed to the
+  repo, so no downloaded data is required.
 * :class:`JudgeLocalReportIntegrationTests` — load the human-labels
-  review CSV and confirm shape (no API).
+  review CSV and confirm shape (downloaded data, no API).
 * :class:`NoiseFilterIntegrationTests` — load the noise-filter results
-  and confirm the exclusion set populates.
+  and confirm the exclusion set populates (downloaded data, no API).
 * :class:`JudgeLocalSmallBatchIntegrationTests` — run the judge against
   3 samples (live OpenAI calls).
 """
@@ -104,13 +105,12 @@ class JudgeHelpersUnitTests(unittest.TestCase):
         self.assertFalse(check_target_substring('NONE', 'anything'))
 
 
-# ===========================================================================
-# Integration suite — one class per scenario
-# ===========================================================================
+class JudgePromptUnitTests(unittest.TestCase):
+    """The judge prompt markdown loads and parses correctly.
 
-@pytest.mark.integration
-class JudgePromptIntegrationTests(unittest.TestCase):
-    """Verify the judge prompt markdown file loads and parses correctly."""
+    `llm-judge-prompt.md` lives in the repo at src/experiments/, so this
+    runs in the unit suite — no downloaded data, no API calls.
+    """
 
     def test_load_judge_prompt(self):
         from src.experiments.llm_judge import load_judge_prompt
@@ -121,6 +121,10 @@ class JudgePromptIntegrationTests(unittest.TestCase):
         self.assertIn('{system_answer}', user_template)
         self.assertIn('{correct_answer}', user_template)
 
+
+# ===========================================================================
+# Integration suite — one class per scenario
+# ===========================================================================
 
 @pytest.mark.integration
 class JudgeLocalReportIntegrationTests(unittest.TestCase):
