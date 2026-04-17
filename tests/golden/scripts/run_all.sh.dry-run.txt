@@ -1,0 +1,26 @@
+==> [1/4] setup_environment.sh
+    $ ${REPO_ROOT}/scripts/setup_environment.sh  (no --dry-run support; would execute)
+
+==> [2/4] prepare_data.sh
+[stub prepare_data.sh] args: --dry-run
+
+==> [3/4] prepare_embeddings.sh
+[stub prepare_embeddings.sh] args: --dry-run
+
+==> [4/4] run_experiments.sh --experiments (orchestrator, detached)
+[stub run_experiments.sh] args: --experiments --dry-run
+
+================================================================
+Experiments are running detached on Modal. When they finish:
+
+  scripts/run_experiments.sh --judge
+  # wait for judge to finish
+  scripts/run_experiments.sh --noise
+  # wait for noise to finish
+  scripts/run_all.sh --resume     # analysis + paper
+
+Monitor:
+  modal app logs rag-poisoning-bench
+  modal app logs rag-poisoning-judge
+  modal app logs rag-poisoning-noise
+================================================================

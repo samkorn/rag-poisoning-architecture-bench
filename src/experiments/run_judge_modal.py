@@ -474,12 +474,12 @@ def run_judge_orchestrator(
     volume.reload()
 
     if dry_run:
-        from src.data.utils import NOISE_QUESTION_IDS
+        from src.data.utils import get_noise_question_ids
+        noise_ids = get_noise_question_ids()
         counts = count_result_files()
         already_judged = get_already_judged()
         # Subtract already-judged and NOISE from per-experiment counts for estimate.
         from collections import Counter
-        noise_ids = NOISE_QUESTION_IDS
         judged_per_exp: Counter[str] = Counter(exp_id for exp_id, _ in already_judged)
         noise_per_exp: Counter[str] = Counter()
         for exp_id in ALL_EXPERIMENTS:
@@ -496,8 +496,10 @@ def run_judge_orchestrator(
         print_cost_estimate(adjusted, model, reasoning_effort)
         return
 
-    from src.data.utils import NOISE_QUESTION_IDS
+    from src.data.utils import get_noise_question_ids
     from src.experiments.llm_judge import load_judge_prompt
+
+    noise_ids = get_noise_question_ids()
 
     print("Listing experiment result IDs from volume...")
     all_ids = list_result_ids()
@@ -509,7 +511,7 @@ def run_judge_orchestrator(
     to_judge = [
         (exp_id, q_id) for exp_id, q_id in all_ids
         if (exp_id, q_id) not in already_judged
-        and q_id not in NOISE_QUESTION_IDS
+        and q_id not in noise_ids
     ]
     print(f"To judge: {len(to_judge)} (excluding NOISE and already-judged)")
 
@@ -567,17 +569,19 @@ def run_validation_orchestrator(
     if '/app' not in sys.path:
         sys.path.insert(0, '/app')
 
-    from src.data.utils import NOISE_QUESTION_IDS
+    from src.data.utils import get_noise_question_ids
     from src.experiments.llm_judge import load_judge_prompt
+
+    noise_ids = get_noise_question_ids()
 
     volume.reload()
 
     # Filter NOISE questions before dispatching.
     pre_filter = len(review_rows)
-    review_rows = [r for r in review_rows if r['question_id'] not in NOISE_QUESTION_IDS]
+    review_rows = [r for r in review_rows if r['question_id'] not in noise_ids]
     n_filtered = pre_filter - len(review_rows)
     if n_filtered:
-        print(f"Filtered {n_filtered} NOISE questions ({', '.join(sorted(NOISE_QUESTION_IDS))})")
+        print(f"Filtered {n_filtered} NOISE questions ({', '.join(sorted(noise_ids))})")
 
     alias = MODEL_ALIASES.get(model, model)
     output_dir = f'{JUDGE_VALIDATION_BASE}_{alias}_{reasoning_effort}_{timestamp}'
@@ -651,7 +655,9 @@ def _load_local_judge_results(
     review_data: list[dict],
 ) -> tuple[list[dict], str]:
     """Load judge results from local files, excluding NOISE questions."""
-    from src.data.utils import NOISE_QUESTION_IDS
+    from src.data.utils import get_noise_question_ids
+
+    noise_ids = get_noise_question_ids()
 
     human_lookup = {}
     for row in review_data:
@@ -674,7 +680,7 @@ def _load_local_judge_results(
                 with open(os.path.join(local_exp_dir, fname)) as f:
                     result = json.load(f)
                 if result.get('classification') is not None:
-                    if result['question_id'] in NOISE_QUESTION_IDS:
+                    if result['question_id'] in noise_ids:
                         noise_skipped += 1
                         continue
                     key = (result['experiment_id'], result['question_id'])
@@ -871,12 +877,13 @@ def main(
             return
 
         # Filter NOISE questions before sending to Modal.
-        from src.data.utils import NOISE_QUESTION_IDS
+        from src.data.utils import get_noise_question_ids
+        noise_ids = get_noise_question_ids()
         pre_filter = len(review_data)
-        review_data = [r for r in review_data if r['question_id'] not in NOISE_QUESTION_IDS]
+        review_data = [r for r in review_data if r['question_id'] not in noise_ids]
         n_filtered = pre_filter - len(review_data)
         if n_filtered:
-            print(f"Filtered {n_filtered} NOISE questions ({', '.join(sorted(NOISE_QUESTION_IDS))})")
+            print(f"Filtered {n_filtered} NOISE questions ({', '.join(sorted(noise_ids))})")
             print(f"Sending {len(review_data)} rows to Modal")
 
         timestamp = datetime.now().strftime('%Y%m%d-%H%M')

@@ -1,0 +1,20 @@
+
+==> [1/6] Download NQ from BEIR
+    $ ${REPO_ROOT}/venv/bin/python src/data/download_datasets.py
+
+==> [2/6] Generate correct answers (Modal)
+    $ ${REPO_ROOT}/venv/bin/modal run src/data/create_correct_answers.py
+
+==> [3/6] Generate naive poisoned docs (Modal)
+    $ ${REPO_ROOT}/venv/bin/modal run src/data/create_incorrect_answers_poisoned_docs.py
+
+==> [4/6] Generate CorruptRAG-AK poisoned docs (Modal)
+    $ ${REPO_ROOT}/venv/bin/modal run src/data/create_corruptrag_ak_poisoned_docs.py
+
+==> [5/6] Build nq-questions.jsonl
+    $ ${REPO_ROOT}/venv/bin/python src/data/create_questions.py
+
+==> [6/6] Assemble poisoned corpora (naive + CorruptRAG-AK)
+    $ ${REPO_ROOT}/venv/bin/python src/data/create_poisoned_datasets.py
+
+Done. Outputs in src/data/experiment-datasets/ and src/data/original-datasets/.

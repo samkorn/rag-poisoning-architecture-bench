@@ -51,7 +51,12 @@ class ClientTimeoutUnitTests(unittest.TestCase):
         )
 
     def test_agentic_client_has_timeout(self):
-        """AgenticRAG constructs AsyncOpenAI client with timeout set."""
+        """AgenticRAG constructs AsyncOpenAI client with timeout set.
+
+        VectorStore is mocked out: the constructor loads real embedding
+        files in normal use, but the assertion here is about the
+        AsyncOpenAI kwargs, not the retrieval stack.
+        """
         captured: dict = {}
 
         original_init = openai.AsyncOpenAI.__init__
@@ -60,7 +65,8 @@ class ClientTimeoutUnitTests(unittest.TestCase):
             captured['timeout'] = kwargs.get('timeout')
             return original_init(self, *args, **kwargs)
 
-        with patch.object(openai.AsyncOpenAI, '__init__', capturing_init):
+        with patch('src.architectures.agentic_rag.VectorStore'), \
+             patch.object(openai.AsyncOpenAI, '__init__', capturing_init):
             from src.architectures.agentic_rag import AgenticRAG
             AgenticRAG(corpus_type='original')
 
@@ -74,8 +80,14 @@ class ClientTimeoutUnitTests(unittest.TestCase):
         — see ``rlm/clients/base_lm.py`` and ``rlm/clients/openai.py``. That
         client is constructed lazily on ``.completion()``, so this test asserts
         the contract at our boundary: ``backend_kwargs`` contains the timeout.
+
+        VectorStore and load_title_to_doc_ids_map are mocked: both hit
+        real data in normal use but aren't relevant to the timeout
+        assertion.
         """
-        from src.architectures.recursive_lm import RLM
-        rlm = RLM(corpus_type='original', model_id='gpt-5-mini')
+        with patch('src.architectures.recursive_lm.VectorStore'), \
+             patch('src.architectures.recursive_lm.load_title_to_doc_ids_map'):
+            from src.architectures.recursive_lm import RLM
+            rlm = RLM(corpus_type='original', model_id='gpt-5-mini')
         timeout = rlm.rlm.backend_kwargs.get('timeout')
         self.assertEqual(timeout, EXPECTED_TIMEOUT)

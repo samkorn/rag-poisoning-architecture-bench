@@ -60,8 +60,19 @@ def _load_noise_question_ids() -> set[str]:
 
 # Questions excluded from all judging and metrics because the target answer
 # is also a plausible correct answer, making attack success unmeasurable.
-# Loaded dynamically from noise filter results (full NOISE only, not partial).
-NOISE_QUESTION_IDS = _load_noise_question_ids()
+# Cached on first call so the file IO only happens once per process, but
+# loaded lazily so importing this module doesn't require noise data on disk
+# (which keeps unit tests that don't exercise judging import-clean).
+_NOISE_QUESTION_IDS_CACHE: set[str] | None = None
+
+
+def get_noise_question_ids() -> set[str]:
+    """Return the set of full-NOISE question IDs, loading + caching on first call."""
+    global _NOISE_QUESTION_IDS_CACHE
+    if _NOISE_QUESTION_IDS_CACHE is None:
+        _NOISE_QUESTION_IDS_CACHE = _load_noise_question_ids()
+    return _NOISE_QUESTION_IDS_CACHE
+
 
 # Testing only — 3 known NOISE IDs from 41-question validation sample:
 # NOISE_QUESTION_IDS = {'test3419', 'test2554', 'test2605'}

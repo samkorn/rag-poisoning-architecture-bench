@@ -40,3 +40,4 @@ scipy
 
 # Testing
 pytest-timeout
+shellcheck-py
