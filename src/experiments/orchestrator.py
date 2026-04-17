@@ -99,8 +99,13 @@ image = (
 volume = modal.Volume.from_name('rag-poisoning-data', create_if_missing=True)
 VOLUME_MOUNT = '/vol'
 
-# Results directory on the volume.
+# Results tree on the volume:
+#   /vol/results/experiments/<experiment_id>/<question_id>.json
+#   /vol/results/judge/<experiment_id>/<question_id>.json
+#   /vol/results/noise/<question_id>.json
+#   /vol/results/archive/
 RESULTS_DIR = f'{VOLUME_MOUNT}/results'
+EXPERIMENTS_DIR = f'{RESULTS_DIR}/experiments'
 
 # --- Secrets --------------------------------------------------------------
 
@@ -210,7 +215,7 @@ def is_experiment_complete(experiment_id: str, n_questions: int) -> bool:
     rate-limit failures etc. are ignored so the orchestrator will re-dispatch
     workers for that experiment.
     """
-    exp_dir = os.path.join(RESULTS_DIR, experiment_id)
+    exp_dir = os.path.join(EXPERIMENTS_DIR, experiment_id)
     if not os.path.isdir(exp_dir):
         return False
     n_success = 0
@@ -267,7 +272,7 @@ def run_worker(config_dict: dict, question_ids: list[str]) -> dict:
         config=config,
         question_ids=question_ids,
         questions=questions,
-        results_dir=RESULTS_DIR,
+        results_dir=EXPERIMENTS_DIR,
         modal_volume=volume,
     )
 
@@ -342,7 +347,7 @@ def run_orchestrator():
         print(f"  Wall time: {elapsed / 60:.1f} min")
 
         # Write experiment-level summary.
-        summary_dir = os.path.join(RESULTS_DIR, config.experiment_id)
+        summary_dir = os.path.join(EXPERIMENTS_DIR, config.experiment_id)
         os.makedirs(summary_dir, exist_ok=True)
         summary_path = os.path.join(summary_dir, 'summary.json')
         with open(summary_path, 'w') as f:

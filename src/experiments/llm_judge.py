@@ -48,6 +48,7 @@ EMBEDDING_MAX_TOKENS = 8192
 _embedding_enc = tiktoken.get_encoding('cl100k_base')
 
 RESULTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'results')
+EXPERIMENTS_DIR = os.path.join(RESULTS_DIR, 'experiments')
 JUDGE_RESULTS_DIR = os.path.join(RESULTS_DIR, 'judge')
 
 ALL_EXPERIMENTS = [
@@ -391,7 +392,7 @@ def load_experiment_results(experiment_dir: str) -> list[dict]:
 
 def judge_experiment(
     experiment_id: str,
-    results_dir: str = RESULTS_DIR,
+    results_dir: str = EXPERIMENTS_DIR,
     judge_output_dir: str = JUDGE_RESULTS_DIR,
     model: str = JUDGE_MODEL,
     reasoning_effort: str = DEFAULT_REASONING_EFFORT,
@@ -399,8 +400,10 @@ def judge_experiment(
 ) -> dict:
     """Run the judge pipeline over all results in one experiment.
 
-    Writes per-question JSON files to judge_output_dir/{experiment_id}/.
-    Skips already-judged questions (checkpoint recovery).
+    Reads per-question JSON files from results_dir/{experiment_id}/
+    (i.e. experiments/{experiment_id}/ under the results tree). Writes
+    per-question JSON files to judge_output_dir/{experiment_id}/. Skips
+    already-judged questions (checkpoint recovery).
 
     Returns summary dict with counts.
     """
@@ -486,8 +489,8 @@ def main():
     parser.add_argument(
         '--results-dir',
         type=str,
-        default=RESULTS_DIR,
-        help=f"Root results directory (default: {RESULTS_DIR})",
+        default=EXPERIMENTS_DIR,
+        help=f"Directory holding per-experiment result subdirs (default: {EXPERIMENTS_DIR})",
     )
     parser.add_argument(
         '--output-dir',

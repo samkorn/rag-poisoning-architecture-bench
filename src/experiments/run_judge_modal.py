@@ -65,9 +65,15 @@ image = (
 
 volume = modal.Volume.from_name('rag-poisoning-data', create_if_missing=True)
 VOLUME_MOUNT = '/vol'
+# Results tree on the volume:
+#   /vol/results/experiments/<experiment_id>/<question_id>.json
+#   /vol/results/judge/<experiment_id>/<question_id>.json
+#   /vol/results/judge_validation/judge_validation_<alias>_<effort>_<ts>/...
 RESULTS_DIR = f'{VOLUME_MOUNT}/results'
+EXPERIMENTS_DIR = f'{RESULTS_DIR}/experiments'
 JUDGE_RESULTS_DIR = f'{RESULTS_DIR}/judge'
-JUDGE_VALIDATION_BASE = f'{RESULTS_DIR}/judge_validation'
+JUDGE_VALIDATION_DIR = f'{RESULTS_DIR}/judge_validation'
+JUDGE_VALIDATION_BASE = f'{JUDGE_VALIDATION_DIR}/judge_validation'
 
 MODEL_ALIASES = {'gpt-5-nano': 'nano', 'gpt-5-mini': 'mini', 'gpt-5': 'full'}
 
@@ -199,7 +205,7 @@ def judge_single_result_from_volume(
 
     openai_client = OpenAI()
 
-    fpath = os.path.join(RESULTS_DIR, experiment_id, f'{question_id}.json')
+    fpath = os.path.join(EXPERIMENTS_DIR, experiment_id, f'{question_id}.json')
     with open(fpath) as f:
         result_dict = json.load(f)
 
@@ -236,7 +242,7 @@ def count_result_files() -> dict[str, int]:
     """Count result JSON files per experiment without parsing any JSON."""
     counts = {}
     for experiment_id in ALL_EXPERIMENTS:
-        exp_dir = os.path.join(RESULTS_DIR, experiment_id)
+        exp_dir = os.path.join(EXPERIMENTS_DIR, experiment_id)
         if not os.path.isdir(exp_dir):
             print(f"  WARNING: {experiment_id} -- no results directory")
             counts[experiment_id] = 0
@@ -252,7 +258,7 @@ def list_result_ids() -> list[tuple[str, str]]:
     """Return (experiment_id, question_id) pairs for all result files without parsing JSON."""
     ids = []
     for experiment_id in ALL_EXPERIMENTS:
-        exp_dir = os.path.join(RESULTS_DIR, experiment_id)
+        exp_dir = os.path.join(EXPERIMENTS_DIR, experiment_id)
         if not os.path.isdir(exp_dir):
             print(f"  WARNING: {experiment_id} -- no results directory")
             continue
@@ -477,7 +483,7 @@ def run_judge_orchestrator(
         judged_per_exp: Counter[str] = Counter(exp_id for exp_id, _ in already_judged)
         noise_per_exp: Counter[str] = Counter()
         for exp_id in ALL_EXPERIMENTS:
-            exp_dir = os.path.join(RESULTS_DIR, exp_id)
+            exp_dir = os.path.join(EXPERIMENTS_DIR, exp_id)
             if os.path.isdir(exp_dir):
                 noise_per_exp[exp_id] = sum(
                     1 for f in os.listdir(exp_dir)
@@ -613,23 +619,27 @@ def _load_review_csv() -> list[dict]:
 def _find_validation_dir(vol: modal.Volume, timestamp: str | None = None) -> str | None:
     """Find a judge_validation_* directory on the volume.
 
-    If timestamp is given (e.g. '20260313-1430'), looks for any dir ending
-    with that timestamp. Otherwise returns the most recent one.
+    Looks in `results/judge_validation/` (current runs) first, then falls
+    back to `results/archive/` (superseded runs). If `timestamp` is given
+    (e.g. '20260313-1430'), returns the dir ending with that timestamp;
+    otherwise returns the most recent across both locations.
     """
-    try:
-        entries = list(vol.listdir('results/'))
-    except Exception:
-        return None
+    validation_dirs: list[str] = []
+    for parent in ('results/judge_validation/', 'results/archive/'):
+        try:
+            entries = list(vol.listdir(parent))
+        except Exception:
+            continue
+        # Match both new (judge_validation_) and old (judge-validation-) naming.
+        validation_dirs.extend(
+            entry.path for entry in entries
+            if (os.path.basename(entry.path).startswith('judge_validation_')
+                or os.path.basename(entry.path).startswith('judge-validation-'))
+        )
 
-    # Match both new (judge_validation_) and old (judge-validation-) naming.
-    validation_dirs = sorted(
-        entry.path for entry in entries
-        if entry.path.startswith('results/judge_validation_')
-        or entry.path.startswith('results/judge-validation-')
-    )
+    validation_dirs = sorted(set(validation_dirs))
 
     if timestamp:
-        # Find the dir ending with this timestamp.
         matches = [d for d in validation_dirs if d.endswith(timestamp)]
         return matches[0] if matches else None
 
@@ -682,18 +692,24 @@ def _load_local_judge_results(
 
 
 def _find_local_validation_dir(timestamp: str) -> str | None:
-    """Find a local judge_validation_* dir matching the given timestamp."""
+    """Find a local judge_validation_* dir matching the given timestamp.
+
+    Looks in `results/judge_validation/` (current runs) first, then falls
+    back to `results/archive/` (superseded runs).
+    """
     local_results = os.path.join(_EXPERIMENTS_DIR, 'results')
-    if not os.path.isdir(local_results):
-        return None
-    matches = [
-        d for d in sorted(os.listdir(local_results))
-        if (d.startswith('judge_validation_') or d.startswith('judge-validation-'))
-        and d.endswith(timestamp)
-    ]
-    if not matches:
-        return None
-    return os.path.join(local_results, matches[0])
+    for bucket in ('judge_validation', 'archive'):
+        parent = os.path.join(local_results, bucket)
+        if not os.path.isdir(parent):
+            continue
+        matches = [
+            d for d in sorted(os.listdir(parent))
+            if (d.startswith('judge_validation_') or d.startswith('judge-validation-'))
+            and d.endswith(timestamp)
+        ]
+        if matches:
+            return os.path.join(parent, matches[0])
+    return None
 
 
 def _download_validation_results(
@@ -735,10 +751,13 @@ def _download_validation_results(
         print("No judge_validation_* directories found on volume.")
         return [], ''
 
-    # Extract the dir name for local mirroring.
-    # remote_dir is like "results/judge_validation_nano_high_20260313-1430"
+    # Mirror the remote path locally: remote_dir is like
+    # "results/judge_validation/judge_validation_mini_high_20260313-1934" or
+    # "results/archive/judge-validation-20260313-0046" — preserve the bucket
+    # (judge_validation/ or archive/) when mirroring.
+    bucket = os.path.basename(os.path.dirname(remote_dir))
     dir_name = os.path.basename(remote_dir)
-    local_output_dir = os.path.join(_EXPERIMENTS_DIR, 'results', dir_name)
+    local_output_dir = os.path.join(_EXPERIMENTS_DIR, 'results', bucket, dir_name)
     os.makedirs(local_output_dir, exist_ok=True)
 
     print(f"Remote: {remote_dir}")

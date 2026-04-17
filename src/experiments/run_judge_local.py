@@ -12,7 +12,7 @@ matrix, target-answer detection agreement).
 Usage:
     python run_judge_local.py
     python run_judge_local.py --reasoning-effort high
-    python run_judge_local.py --output-dir results/judge-validation-v2
+    python run_judge_local.py --output-dir results/judge_validation/judge_validation_mini_high_v2
 """
 
 import argparse
@@ -46,26 +46,30 @@ REVIEW_CSV = os.path.join(
     '..', '..', 'analysis', 'human_labels.csv',
 )
 
-DEFAULT_OUTPUT_DIR = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
-    'results', 'judge-validation',
-)
-
 _RESULTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'results')
+_JUDGE_VALIDATION_DIR = os.path.join(_RESULTS_DIR, 'judge_validation')
+_ARCHIVE_DIR = os.path.join(_RESULTS_DIR, 'archive')
+
+DEFAULT_OUTPUT_DIR = os.path.join(_JUDGE_VALIDATION_DIR, 'judge_validation')
 
 
 def _find_local_validation_dir(timestamp: str) -> str | None:
-    """Find a local judge_validation_* dir matching the given timestamp."""
-    if not os.path.isdir(_RESULTS_DIR):
-        return None
-    matches = [
-        d for d in sorted(os.listdir(_RESULTS_DIR))
-        if (d.startswith('judge_validation_') or d.startswith('judge-validation-'))
-        and d.endswith(timestamp)
-    ]
-    if not matches:
-        return None
-    return os.path.join(_RESULTS_DIR, matches[0])
+    """Find a local judge_validation_* dir matching the given timestamp.
+
+    Looks in `results/judge_validation/` (current runs) first, then falls
+    back to `results/archive/` (superseded runs).
+    """
+    for parent in (_JUDGE_VALIDATION_DIR, _ARCHIVE_DIR):
+        if not os.path.isdir(parent):
+            continue
+        matches = [
+            d for d in sorted(os.listdir(parent))
+            if (d.startswith('judge_validation_') or d.startswith('judge-validation-'))
+            and d.endswith(timestamp)
+        ]
+        if matches:
+            return os.path.join(parent, matches[0])
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -609,8 +613,10 @@ def main():
     parser.add_argument(
         '--timestamp',
         type=str,
-        help="Timestamp suffix to find a specific validation run dir (e.g. '20260312-2300'). "
-             "Used with --report-only to locate results/judge_validation_*_<timestamp>/.",
+        help="Timestamp suffix to find a specific validation run dir (e.g. '20260313-1934'). "
+             "Used with --report-only to locate "
+             "results/judge_validation/judge_validation_*_<timestamp>/ or "
+             "results/archive/judge_validation_*_<timestamp>/.",
     )
     args = parser.parse_args()
 
