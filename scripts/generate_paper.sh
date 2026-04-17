@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Compile paper/paper_draft_working.tex into a PDF.
+# Compile paper/paper.tex into a PDF.
 #
 # Canonical LaTeX + BibTeX build sequence:
 #   pdflatex -> bibtex -> pdflatex -> pdflatex
@@ -36,7 +36,7 @@ cd "${REPO_ROOT}/paper"
 
 PDFLATEX=/Library/TeX/texbin/pdflatex
 BIBTEX=/Library/TeX/texbin/bibtex
-DOC=paper_draft_working
+DOC=paper
 
 if [[ ! -x "${PDFLATEX}" ]]; then
     echo "ERROR: pdflatex not found at ${PDFLATEX}" >&2
