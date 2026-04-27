@@ -8,14 +8,13 @@ import pickle
 import modal
 import transformers
 import numpy as np
-from dotenv import load_dotenv; load_dotenv()
 
 
 # Modal setup
 app = modal.App('embed-datasets')
 contriever_image = (
     modal.Image.debian_slim(python_version='3.11')
-    .pip_install('torch', 'transformers', 'numpy', 'scikit-learn', 'python-dotenv')
+    .pip_install('torch', 'transformers', 'numpy', 'scikit-learn')
     .add_local_file('src/embeddings/embeddings.py', remote_path='/root/embeddings.py')
 )
 model_volume = modal.Volume.from_name('contriever-model', create_if_missing=True)
@@ -23,9 +22,14 @@ MODEL_DIR = '/vol/contriever'
 EMBED_BATCH_SIZE = 1024
 
 
+# facebook/contriever is a public model and does not require auth, so the
+# from_pretrained calls below are unauthenticated. If you ever see an HF
+# rate-limit (429) or authentication warning during the one-time download,
+# the fix is to add a Modal Secret containing HF_TOKEN to this function's
+# decorator and pass token=os.environ.get('HF_TOKEN') to both from_pretrained
+# calls.
 @app.function(
     image=contriever_image,
-    secrets=[modal.Secret.from_name('huggingface-rag-poisoning')],
     volumes={MODEL_DIR: model_volume},
     timeout=60 * 10, # 10 minutes max
 )
@@ -36,8 +40,8 @@ def download_model():
         return
     from transformers import AutoTokenizer, AutoModel
     print("Downloading contriever to volume...")
-    AutoTokenizer.from_pretrained('facebook/contriever', token=os.environ.get('HF_TOKEN')).save_pretrained(MODEL_DIR)
-    AutoModel.from_pretrained('facebook/contriever', token=os.environ.get('HF_TOKEN')).save_pretrained(MODEL_DIR)
+    AutoTokenizer.from_pretrained('facebook/contriever').save_pretrained(MODEL_DIR)
+    AutoModel.from_pretrained('facebook/contriever').save_pretrained(MODEL_DIR)
     model_volume.commit()
     print("Done.")
 
