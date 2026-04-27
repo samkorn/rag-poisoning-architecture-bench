@@ -22,11 +22,12 @@ MODEL_DIR = '/vol/contriever'
 EMBED_BATCH_SIZE = 1024
 
 
-# facebook/contriever is a public model and does not require auth. If you ever
-# see an HF rate-limit (429) or auth warning during the one-time download below,
-# the fix is to wire the `huggingface-rag-poisoning` Modal Secret back into this
-# function and pass `token=os.environ.get('HF_TOKEN')` to both from_pretrained
-# calls. The Secret itself is preserved in Modal for that contingency.
+# facebook/contriever is a public model and does not require auth, so the
+# from_pretrained calls below are unauthenticated. If you ever see an HF
+# rate-limit (429) or authentication warning during the one-time download,
+# the fix is to add a Modal Secret containing HF_TOKEN to this function's
+# decorator and pass token=os.environ.get('HF_TOKEN') to both from_pretrained
+# calls.
 @app.function(
     image=contriever_image,
     volumes={MODEL_DIR: model_volume},
