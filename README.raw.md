@@ -1,31 +1,17 @@
-<h1 align="center">Architecture Matters<br><sub>Comparing RAG Systems under Knowledge Base Poisoning</sub></h1>
+*This is the source-readable variant of [README.md](README.md) — same content, with HTML wrappers, badges, and the mermaid diagram stripped out so it reads cleanly as raw markdown. For the rendered version with figures and styled headers, see [README.md](README.md).*
 
-<p align="center">
-  <a href="paper/paper.pdf">Paper</a>
-  &nbsp;·&nbsp;
-  <a href="https://doi.org/10.5281/zenodo.19582217">Data</a>
-  <!-- &nbsp;·&nbsp; <a href="#">Blog post</a> — TODO: add when published -->
-</p>
+# Architecture Matters: Comparing RAG Systems under Knowledge Base Poisoning
 
-<p align="center">
-  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-blue.svg"></a>
-  <a href="https://www.python.org/downloads/release/python-3120/"><img alt="Python 3.12" src="https://img.shields.io/badge/python-3.12-blue.svg"></a>
-  <a href="https://doi.org/10.5281/zenodo.19582217"><img alt="DOI" src="https://zenodo.org/badge/DOI/10.5281/zenodo.19582217.svg"></a>
-</p>
+- [Paper](paper/paper.pdf)
+- [Data](https://doi.org/10.5281/zenodo.19582217)
 
-<p align="center">
-  <a href="paper/paper.pdf"><img src="assets/paper_thumbnail.png" width="50%" alt="Paper — click to open PDF"></a>
-</p>
-
-*Reading this as raw markdown? See [README.raw.md](README.raw.md) for a version stripped of HTML tags and the mermaid diagram.*
+License: MIT · Python 3.12 · DOI: [10.5281/zenodo.19582217](https://doi.org/10.5281/zenodo.19582217)
 
 ## Overview
 
 Retrieval-Augmented Generation systems are vulnerable to knowledge base poisoning, yet existing attacks have been evaluated almost exclusively against vanilla retrieve-then-generate pipelines. Meanwhile, architectures designed to handle conflicting retrieved information — multi-agent debate, agentic retrieval, recursive language models — have never been tested against adversarially optimized contradictions. We bridge this gap by evaluating four RAG architectures (vanilla, agentic, MADAM-RAG, and Recursive Language Models) under controlled single-document (N=1) poisoning on 921 question-answer pairs from Natural Questions. We test each against a clean baseline, naive injection, and CorruptRAG-AK, an adversarial attack whose meta-epistemic framing directly targets credibility assessment.
 
-<p align="center">
-  <img src="analysis/figures/fig_teaser_crak_asr.png" width="70%" alt="CorruptRAG-AK attack success rate by architecture">
-</p>
+![CorruptRAG-AK attack success rate by architecture](analysis/figures/fig_teaser_crak_asr.png)
 
 **Headline findings:**
 
@@ -103,38 +89,19 @@ rag-poisoning-architecture-bench/
 
 The eight scripts in [scripts/](scripts/) are the canonical entry points. They share a consistent interface: `--help` on any of them prints usage, `set -euo pipefail` everywhere, `--dry-run` on the expensive ones, and sensible prerequisite checks with "run X first" errors.
 
-```mermaid
-flowchart LR
-    setup[setup_environment.sh<br/><i>venv + pip install</i>]
+Pipeline DAG:
 
-    subgraph reproduce[Full reproduction]
-        direction LR
-        prepdata[prepare_data.sh<br/><i>NQ download + LLM poisoned docs</i><br/>~$80-130, ~30-60 min]
-        prepemb[prepare_embeddings.sh<br/><i>Modal GPU embed + FAISS</i><br/>~$5-10, ~1-2 hr]
-        runexp[run_experiments.sh<br/><i>12 experiments + judge + noise on Modal</i><br/>~$350-570, ~24 hr async]
-        prepdata --> prepemb --> runexp
-    end
-
-    subgraph analyze[Analysis-only path]
-        direction LR
-        download[download_data.sh<br/><i>Zenodo bundle, ~40 MB</i>]
-    end
-
-    runanalysis[run_analysis.sh<br/><i>execute analysis.ipynb in place</i>]
-    genpaper[generate_paper.sh<br/><i>pdflatex -> bibtex -> pdflatex x2</i>]
-
-    setup --> reproduce
-    setup --> analyze
-    runexp --> runanalysis
-    download --> runanalysis
-    runanalysis --> genpaper
-
-    classDef entry fill:#e8f4fd,stroke:#0366d6,color:#000;
-    classDef expensive fill:#fff5d6,stroke:#c99400,color:#000;
-    classDef cheap fill:#e6f4ea,stroke:#1e7e34,color:#000;
-    class setup entry;
-    class prepdata,prepemb,runexp expensive;
-    class download,runanalysis,genpaper cheap;
+```
+setup_environment.sh
+  │
+  ├── Full reproduction:
+  │     prepare_data.sh  →  prepare_embeddings.sh  →  run_experiments.sh
+  │                                                       │
+  │                                                       ▼
+  │                                                  run_analysis.sh  →  generate_paper.sh
+  │
+  └── Analysis-only:
+        download_data.sh  →  run_analysis.sh  →  generate_paper.sh
 ```
 
 `scripts/run_all.sh` chains these together; `scripts/run_tests.sh` is the test-suite entry point and is not part of the research pipeline.
