@@ -1,6 +1,6 @@
 """Assemble poisoned corpus directories from the original NQ dataset.
 
-Creates two poisoned corpus directories (one at a time — comment/uncomment as needed):
+Creates two poisoned corpus directories:
 
 1. nq-naive-poisoning/         — naive poisoned docs (from nq-incorrect-answers-poisoned-docs.jsonl)
 2. nq-corruptrag-ak-poisoning/ — CorruptRAG-AK poisoned docs (query prepended per p_i = p_i^s + p_i^h)
@@ -76,38 +76,38 @@ def main():
             raise ValueError(f"Query {query_id} has multiple distinct titles: {distinct_titles}")
         distinct_titles_per_query[query_id] = list(distinct_titles)[0]
 
-    # --- Naive poisoning (TEMP: commented out — corpus already exists) ---
+    # --- Naive poisoning ---
 
-    # naive_output_dir = os.path.join(EXPERIMENT_DIR, 'nq-naive-poisoning')
-    #
-    # print("\n=== Building naive poisoned corpus ===")
-    # _safe_copy_original(naive_output_dir)
-    #
-    # # Parse naive poisoned docs
-    # poisoned_docs: dict[str, str] = {}
-    # with open(os.path.join(EXPERIMENT_DIR, 'nq-incorrect-answers-poisoned-docs.jsonl'), 'r') as f:
-    #     for line in f.readlines():
-    #         line_dict = json.loads(line)
-    #         poisoned_docs[line_dict['query_id']] = line_dict['poisoned_doc']
-    #
-    # # Build and append naive poisoned docs
-    # naive_poisoned_lines: list[dict] = []
-    # for query_id in poisoned_docs.keys():
-    #     title = distinct_titles_per_query[query_id]
-    #     naive_poisoned_lines.append({
-    #         '_id': f'poisoned-naive-q:{query_id}',
-    #         'title': title,
-    #         'text': poisoned_docs[query_id],
-    #         'metadata': {},
-    #     })
-    #
-    # print(f"Appending {len(naive_poisoned_lines)} poisoned docs to corpus...")
-    # with open(os.path.join(naive_output_dir, 'corpus.jsonl'), 'a') as f:
-    #     for line_dict in naive_poisoned_lines:
-    #         f.write(json.dumps(line_dict) + '\n')
-    #
-    # total = sum(1 for _ in open(os.path.join(naive_output_dir, 'corpus.jsonl'), 'r'))
-    # print(f"Done. Naive corpus has {total:,} documents (expected ~2,684,920)")
+    naive_output_dir = os.path.join(EXPERIMENT_DIR, 'nq-naive-poisoning')
+
+    print("\n=== Building naive poisoned corpus ===")
+    _safe_copy_original(naive_output_dir)
+
+    # Parse naive poisoned docs
+    poisoned_docs: dict[str, str] = {}
+    with open(os.path.join(EXPERIMENT_DIR, 'nq-incorrect-answers-poisoned-docs.jsonl'), 'r') as f:
+        for line in f.readlines():
+            line_dict = json.loads(line)
+            poisoned_docs[line_dict['query_id']] = line_dict['poisoned_doc']
+
+    # Build and append naive poisoned docs
+    naive_poisoned_lines: list[dict] = []
+    for query_id in poisoned_docs.keys():
+        title = distinct_titles_per_query[query_id]
+        naive_poisoned_lines.append({
+            '_id': f'poisoned-naive-q:{query_id}',
+            'title': title,
+            'text': poisoned_docs[query_id],
+            'metadata': {},
+        })
+
+    print(f"Appending {len(naive_poisoned_lines)} poisoned docs to corpus...")
+    with open(os.path.join(naive_output_dir, 'corpus.jsonl'), 'a') as f:
+        for line_dict in naive_poisoned_lines:
+            f.write(json.dumps(line_dict) + '\n')
+
+    total = sum(1 for _ in open(os.path.join(naive_output_dir, 'corpus.jsonl'), 'r'))
+    print(f"Done. Naive corpus has {total:,} documents (expected ~2,684,920)")
 
     # --- CorruptRAG-AK poisoning ---
 
