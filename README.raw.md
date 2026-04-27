@@ -1,17 +1,17 @@
-*This is the source-readable variant of [README.md](README.md) — same content, with HTML wrappers, badges, and the mermaid diagram stripped out so it reads cleanly as raw markdown. For the rendered version with figures and styled headers, see [README.md](README.md).*
+*This is the source-readable variant of README.md — same content, with HTML wrappers, badges, the mermaid diagram, and most link markup stripped out so it reads cleanly as raw markdown. For the rendered version with figures and styled headers, open README.md.*
 
 # Architecture Matters: Comparing RAG Systems under Knowledge Base Poisoning
 
-- [Paper](paper/paper.pdf)
-- [Data](https://doi.org/10.5281/zenodo.19582217)
+- Paper: paper/paper.pdf
+- Data: https://doi.org/10.5281/zenodo.19582217
 
-License: MIT · Python 3.12 · DOI: [10.5281/zenodo.19582217](https://doi.org/10.5281/zenodo.19582217)
+License: MIT  ·  Python 3.12  ·  DOI: https://doi.org/10.5281/zenodo.19582217
 
 ## Overview
 
 Retrieval-Augmented Generation systems are vulnerable to knowledge base poisoning, yet existing attacks have been evaluated almost exclusively against vanilla retrieve-then-generate pipelines. Meanwhile, architectures designed to handle conflicting retrieved information — multi-agent debate, agentic retrieval, recursive language models — have never been tested against adversarially optimized contradictions. We bridge this gap by evaluating four RAG architectures (vanilla, agentic, MADAM-RAG, and Recursive Language Models) under controlled single-document (N=1) poisoning on 921 question-answer pairs from Natural Questions. We test each against a clean baseline, naive injection, and CorruptRAG-AK, an adversarial attack whose meta-epistemic framing directly targets credibility assessment.
 
-![CorruptRAG-AK attack success rate by architecture](analysis/figures/fig_teaser_crak_asr.png)
+(Teaser figure — CorruptRAG-AK attack success rate by architecture — at analysis/figures/fig_teaser_crak_asr.png)
 
 **Headline findings:**
 
@@ -19,16 +19,16 @@ Retrieval-Augmented Generation systems are vulnerable to knowledge base poisonin
 - **Adversarial framing — not retrieval optimization — drives most of the gap** between naive and CorruptRAG-AK injection for three of four architectures. Once a poisoned document is retrieved, the content-reasoning stage is where architectures diverge, so generation-level defenses are the primary intervention target.
 - **MADAM-RAG detects contradictions but cannot resolve them.** Our reimplementation has the highest apparent contradiction-detection rate across all four architectures, yet produces a 41.4% non-answer rate even on clean inputs. Detection works; resolution does not.
 
-See the [paper](paper/paper.pdf) for the full analysis and caveats (notably, the LLM judge's ~48.5% precision on contradiction-detection labels, which makes those rates upper bounds).
+See the paper at paper/paper.pdf for the full analysis and caveats (notably, the LLM judge's ~48.5% precision on contradiction-detection labels, which makes those rates upper bounds).
 
 ## Quick start
 
-Two paths depending on whether you want to rerun the experiments or just regenerate the figures/tables. The analysis-only path uses the archived results bundle on Zenodo — DOI [`10.5281/zenodo.19582217`](https://doi.org/10.5281/zenodo.19582217).
+Two paths depending on whether you want to rerun the experiments or just regenerate the figures/tables. The analysis-only path uses the archived results bundle on Zenodo — DOI 10.5281/zenodo.19582217 (https://doi.org/10.5281/zenodo.19582217).
 
 ### Requirements
 
 - **Python 3.12** — required; the venv is pinned to this version.
-- **[Modal](https://modal.com/) account** — required for embedding the corpus (GPU) and for running experiments + LLM judge at scale. CPU-light for dev.
+- **Modal account** (https://modal.com/) — required for embedding the corpus (GPU) and for running experiments + LLM judge at scale. CPU-light for dev.
 - **OpenAI API key** — required for experiments, judge, and noise filter. The analysis-only path does not need one.
 - **LaTeX** (optional) — only needed to recompile the PDF. MacTeX / TeX Live with `pdflatex` + `bibtex`.
 
@@ -44,7 +44,7 @@ cd rag-poisoning-architecture-bench
 scripts/run_all.sh --analysis-only
 ```
 
-Chains env setup → Zenodo download → notebook execution → paper compile. See [Pipeline stages](#pipeline-stages) if you want to run the individual scripts.
+Chains env setup → Zenodo download → notebook execution → paper compile. See the Pipeline stages section below if you want to run the individual scripts.
 
 ### Path B — full reproduction (multi-day, ~$300–500)
 
@@ -87,7 +87,7 @@ rag-poisoning-architecture-bench/
 
 ## Pipeline stages
 
-The eight scripts in [scripts/](scripts/) are the canonical entry points. They share a consistent interface: `--help` on any of them prints usage, `set -euo pipefail` everywhere, `--dry-run` on the expensive ones, and sensible prerequisite checks with "run X first" errors.
+The eight scripts in scripts/ are the canonical entry points. They share a consistent interface: `--help` on any of them prints usage, `set -euo pipefail` everywhere, `--dry-run` on the expensive ones, and sensible prerequisite checks with "run X first" errors.
 
 Pipeline DAG:
 
@@ -106,42 +106,69 @@ setup_environment.sh
 
 `scripts/run_all.sh` chains these together; `scripts/run_tests.sh` is the test-suite entry point and is not part of the research pipeline.
 
-| Script | What it does | Cost | Wall time | Outputs |
-|---|---|---|---|---|
-| [`setup_environment.sh`](scripts/setup_environment.sh) | Creates `venv/` with Python 3.12, installs project in editable mode, checks for Modal + OpenAI credentials. | — | ~2 min | `venv/` |
-| [`download_data.sh`](scripts/download_data.sh) | Fetches the archived experiment bundle from Zenodo (DOI `10.5281/zenodo.19582217`, ~40 MB zipped) and unpacks into the expected directory layout. | Free | ~1 min | `src/experiments/results/{experiments,judge,noise}/`, `src/data/experiment-datasets/*.jsonl`, `analysis/human_labels.csv` |
-| [`prepare_data.sh`](scripts/prepare_data.sh) | Downloads NQ from BEIR, generates correct answers + naive and CorruptRAG-AK poisoned docs on Modal, assembles the three corpus variants. | ~$80–130 OpenAI | ~30–60 min | `src/data/original-datasets/nq/`, `src/data/experiment-datasets/nq-*/`, `nq-questions.jsonl` |
-| [`prepare_embeddings.sh`](scripts/prepare_embeddings.sh) | Embeds the three corpus variants with Contriever on a Modal GPU, builds FAISS indexes locally, filters to 1,150 questions with a gold doc in top-10 clean retrieval. | ~$5–10 GPU | ~1–2 hr | `src/data/vector-store/*.{pkl,faiss}`, `nq-questions-gold-filtered.jsonl` |
-| [`run_experiments.sh`](scripts/run_experiments.sh) | Uploads data to the Modal volume, launches 12 experiments (4 architectures × 3 attack conditions) + LLM judge + noise filter as detached Modal apps. | ~$350–570 OpenAI | ~24 hr async | `src/experiments/results/{experiments,judge,noise}/*.json` |
-| [`run_analysis.sh`](scripts/run_analysis.sh) | Executes `analysis/analysis.ipynb` in place, regenerating 15 figures, 7 LaTeX table fragments, and the intermediate parquet join. **Overwrites committed deliverables — review `git diff` before committing.** | — | ~2–5 min | `analysis/figures/*.{png,pdf}`, `paper/tables/*.tex`, `analysis/intermediate/merged_results.parquet` |
-| [`generate_paper.sh`](scripts/generate_paper.sh) | Canonical LaTeX build: `pdflatex → bibtex → pdflatex → pdflatex`. `--quick` runs one pass off cached `.bbl`/`.aux`. | — | ~30 sec | `paper/paper.pdf` |
-| [`run_all.sh`](scripts/run_all.sh) | Chains setup → data → embeddings → launch-experiments. Stops after the detached Modal launch and prints resume instructions. `--resume` runs analysis + paper; `--analysis-only` swaps regeneration for the Zenodo download. | — | See above | — |
+Per-script breakdown:
+
+- **scripts/setup_environment.sh**
+  Creates `venv/` with Python 3.12, installs project in editable mode, checks for Modal + OpenAI credentials.
+  Cost: —  ·  Wall time: ~2 min  ·  Outputs: `venv/`
+
+- **scripts/download_data.sh**
+  Fetches the archived experiment bundle from Zenodo (DOI 10.5281/zenodo.19582217, ~40 MB zipped) and unpacks into the expected directory layout.
+  Cost: free  ·  Wall time: ~1 min  ·  Outputs: `src/experiments/results/{experiments,judge,noise}/`, `src/data/experiment-datasets/*.jsonl`, `analysis/human_labels.csv`
+
+- **scripts/prepare_data.sh**
+  Downloads NQ from BEIR, generates correct answers + naive and CorruptRAG-AK poisoned docs on Modal, assembles the three corpus variants.
+  Cost: ~$80–130 OpenAI  ·  Wall time: ~30–60 min  ·  Outputs: `src/data/original-datasets/nq/`, `src/data/experiment-datasets/nq-*/`, `nq-questions.jsonl`
+
+- **scripts/prepare_embeddings.sh**
+  Embeds the three corpus variants with Contriever on a Modal GPU, builds FAISS indexes locally, filters to 1,150 questions with a gold doc in top-10 clean retrieval.
+  Cost: ~$5–10 GPU  ·  Wall time: ~1–2 hr  ·  Outputs: `src/data/vector-store/*.{pkl,faiss}`, `nq-questions-gold-filtered.jsonl`
+
+- **scripts/run_experiments.sh**
+  Uploads data to the Modal volume, launches 12 experiments (4 architectures × 3 attack conditions) + LLM judge + noise filter as detached Modal apps.
+  Cost: ~$350–570 OpenAI  ·  Wall time: ~24 hr async  ·  Outputs: `src/experiments/results/{experiments,judge,noise}/*.json`
+
+- **scripts/run_analysis.sh**
+  Executes `analysis/analysis.ipynb` in place, regenerating 15 figures, 7 LaTeX table fragments, and the intermediate parquet join. **Overwrites committed deliverables — review `git diff` before committing.**
+  Cost: —  ·  Wall time: ~2–5 min  ·  Outputs: `analysis/figures/*.{png,pdf}`, `paper/tables/*.tex`, `analysis/intermediate/merged_results.parquet`
+
+- **scripts/generate_paper.sh**
+  Canonical LaTeX build: `pdflatex → bibtex → pdflatex → pdflatex`. `--quick` runs one pass off cached `.bbl`/`.aux`.
+  Cost: —  ·  Wall time: ~30 sec  ·  Outputs: `paper/paper.pdf`
+
+- **scripts/run_all.sh**
+  Chains setup → data → embeddings → launch-experiments. Stops after the detached Modal launch and prints resume instructions. `--resume` runs analysis + paper; `--analysis-only` swaps regeneration for the Zenodo download.
 
 ## Experimental setup
 
 ### Architectures tested
 
-| System | What it does | Source |
-|---|---|---|
-| **Vanilla RAG** | Retrieve top-K, concatenate into a single prompt, generate. | [src/architectures/vanilla_rag.py](src/architectures/vanilla_rag.py) |
-| **Agentic RAG** | PydanticAI agent with a retrieval tool in a reasoning loop — can re-query, inspect documents, and stop when confident. | [src/architectures/agentic_rag.py](src/architectures/agentic_rag.py) |
-| **MADAM-RAG** | Multi-agent debate ([Wang et al., COLM 2025](https://arxiv.org/abs/2504.15253)): one agent per retrieved document, rounds of deliberation, aggregator produces final answer. | [src/architectures/madam_rag.py](src/architectures/madam_rag.py) |
-| **RLM** | Recursive Language Model ([Zhang et al., 2025](https://arxiv.org/abs/2512.24601)): sees the full topic context (not top-K), decomposes programmatically via sub-LM calls. | [src/architectures/recursive_lm.py](src/architectures/recursive_lm.py) |
+- **Vanilla RAG** — retrieve top-K, concatenate into a single prompt, generate.
+  Source: src/architectures/vanilla_rag.py
+
+- **Agentic RAG** — PydanticAI agent with a retrieval tool in a reasoning loop, can re-query, inspect documents, and stop when confident.
+  Source: src/architectures/agentic_rag.py
+
+- **MADAM-RAG** — multi-agent debate (Wang et al., COLM 2025; https://arxiv.org/abs/2504.15253): one agent per retrieved document, rounds of deliberation, aggregator produces final answer.
+  Source: src/architectures/madam_rag.py
+
+- **RLM** — Recursive Language Model (Zhang et al., 2025; https://arxiv.org/abs/2512.24601): sees the full topic context (not top-K), decomposes programmatically via sub-LM calls.
+  Source: src/architectures/recursive_lm.py
 
 All four use **gpt-5-mini** as the backbone LLM, so cross-architecture differences reflect orchestration design rather than base-model capability.
 
 ### Dataset
 
-- **Source**: [Natural Questions](https://ai.google.com/research/NaturalQuestions) via [BEIR](https://github.com/beir-cellar/beir) — 2.68M Wikipedia passages, 3,452 test questions.
+- **Source**: Natural Questions (https://ai.google.com/research/NaturalQuestions) via BEIR (https://github.com/beir-cellar/beir) — 2.68M Wikipedia passages, 3,452 test questions.
 - **Filtering**: we retain only questions where ≥1 gold-answer document appears in top-10 Contriever retrieval under clean conditions (~1,150 remaining), then exclude 229 questions where the target incorrect answer is also a factually valid answer (LLM-classified "full noise"), leaving **921 questions** for analysis.
 - **Attack conditions** (N=1 injection alongside the clean top-10):
   - **Clean** — no injection.
   - **Naive** — a naturally written passage asserting the target incorrect answer, no retrieval optimization.
-  - **CorruptRAG-AK** ([Zhang et al., 2025](https://arxiv.org/abs/2502.20824)) — meta-epistemic framing ("many outdated sources incorrectly state… the latest data confirms…") designed to target credibility assessment.
+  - **CorruptRAG-AK** (Zhang et al., 2025; https://arxiv.org/abs/2502.20824) — meta-epistemic framing ("many outdated sources incorrectly state… the latest data confirms…") designed to target credibility assessment.
 
 ### Evaluation
 
-- **Judge**: gpt-5-mini (high reasoning effort) classifies each response into one of seven behavioral categories, post-hoc merged into five for headline analysis: `CORRECT`, `CORRECT_WITH_DETECTION`, `HEDGING`, `INCORRECT`, `UNKNOWN`. The judge labels were spot-validated against 1,475 human labels (`human_labels.csv`, bundled in the [Zenodo archive](https://doi.org/10.5281/zenodo.19582217) and fetched by `scripts/download_data.sh`) — see the paper for per-category precision and the caveats around `CORRECT_WITH_DETECTION` in particular.
+- **Judge**: gpt-5-mini (high reasoning effort) classifies each response into one of seven behavioral categories, post-hoc merged into five for headline analysis: `CORRECT`, `CORRECT_WITH_DETECTION`, `HEDGING`, `INCORRECT`, `UNKNOWN`. The judge labels were spot-validated against 1,475 human labels (`human_labels.csv`, bundled in the Zenodo archive at https://doi.org/10.5281/zenodo.19582217 and fetched by `scripts/download_data.sh`) — see the paper for per-category precision and the caveats around `CORRECT_WITH_DETECTION` in particular.
 - **Attack Success Rate (ASR)**: `target_present_in_response AND NOT is_correct`. Clean-conditioned ASR restricts the denominator to questions each architecture answers correctly on clean inputs, isolating the effect of the attack.
 - **Noise filter**: the 229 exclusions are produced by a separate GPT-5-mini classifier pass (web search enabled) run once per question. See the paper's Dataset section for the full procedure.
 
@@ -159,4 +186,4 @@ All four use **gpt-5-mini** as the backbone LLM, so cross-architecture differenc
 
 ## License
 
-Code is released under the [MIT License](LICENSE). The archived experiment data bundle on Zenodo is released under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+Code is released under the MIT License (see LICENSE). The archived experiment data bundle on Zenodo is released under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/).
