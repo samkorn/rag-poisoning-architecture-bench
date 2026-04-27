@@ -16,7 +16,8 @@
 #   - analysis/human_labels.csv exists
 #
 # Usage:
-#   scripts/run_analysis.sh               # execute notebook in place
+#   scripts/run_analysis.sh               # execute notebook in place (prompts before running)
+#   scripts/run_analysis.sh --force       # skip the y/N confirmation prompt
 #   scripts/run_analysis.sh --help
 
 set -euo pipefail
@@ -25,10 +26,12 @@ show_help() {
     awk 'NR==1 {next} /^[^#]/ {exit} {sub(/^# ?/, ""); print}' "${BASH_SOURCE[0]}"
 }
 
+force=0
 for arg in "$@"; do
     case "${arg}" in
-        --help|-h) show_help; exit 0 ;;
-        *)         echo "ERROR: unknown arg '${arg}'" >&2; show_help >&2; exit 2 ;;
+        --help|-h)  show_help; exit 0 ;;
+        --force|-f) force=1 ;;
+        *)          echo "ERROR: unknown arg '${arg}'" >&2; show_help >&2; exit 2 ;;
     esac
 done
 
@@ -65,10 +68,30 @@ done
 mkdir -p analysis/figures analysis/intermediate paper/tables
 
 # ---------------------------------------------------------------------------
+# Confirmation prompt — overwrites committed deliverables
+# ---------------------------------------------------------------------------
+if [[ "${force}" != "1" ]]; then
+    cat <<'EOF'
+
+WARNING: This will execute analysis/analysis.ipynb in place, overwriting:
+    - analysis/figures/       (committed paper figures)
+    - paper/tables/           (committed paper tables)
+    - analysis/intermediate/  (computed parquet intermediates)
+    - analysis/analysis.ipynb (cell outputs regenerated)
+
+Runtime: ~5-10 minutes. No API cost (local matplotlib + pandas).
+EOF
+    read -r -p "Continue? [y/N]: " reply
+    case "${reply}" in
+        y|Y|yes|YES) ;;
+        *) echo "Aborted."; exit 0 ;;
+    esac
+fi
+
+# ---------------------------------------------------------------------------
 # Execute notebook in place
 # ---------------------------------------------------------------------------
 echo "==> Executing analysis/analysis.ipynb"
-echo "    This takes several minutes."
 "${JUPYTER}" nbconvert \
     --to notebook \
     --execute analysis/analysis.ipynb \

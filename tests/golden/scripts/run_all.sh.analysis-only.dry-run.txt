@@ -5,7 +5,7 @@
     $ ${REPO_ROOT}/scripts/download_data.sh  (no --dry-run support; would execute)
 
 ==> [3/4] run_analysis.sh
-    $ ${REPO_ROOT}/scripts/run_analysis.sh  (no --dry-run support; would execute)
+    $ ${REPO_ROOT}/scripts/run_analysis.sh --force  (no --dry-run support; would execute)
 
 ==> [4/4] generate_paper.sh
     $ ${REPO_ROOT}/scripts/generate_paper.sh  (no --dry-run support; would execute)

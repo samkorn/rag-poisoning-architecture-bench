@@ -20,11 +20,12 @@
 #   scripts/prepare_embeddings.sh has completed (vector store + gold questions)
 #
 # Usage:
-#   scripts/run_experiments.sh                 # full pipeline
+#   scripts/run_experiments.sh                 # full pipeline (prompts before running)
 #   scripts/run_experiments.sh --skip-upload   # skip step 1 (volume already populated)
 #   scripts/run_experiments.sh --experiments   # only step 2
 #   scripts/run_experiments.sh --judge         # only step 3
 #   scripts/run_experiments.sh --noise         # only step 4
+#   scripts/run_experiments.sh --force         # skip the y/N confirmation prompt
 #   scripts/run_experiments.sh --dry-run       # print commands without executing
 #   scripts/run_experiments.sh --help
 #
@@ -40,6 +41,7 @@ show_help() {
 
 mode="all"
 skip_upload=0
+force=0
 DRY_RUN=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -48,6 +50,7 @@ while [[ $# -gt 0 ]]; do
         --experiments) mode="experiments"; shift ;;
         --judge)       mode="judge"; shift ;;
         --noise)       mode="noise"; shift ;;
+        --force|-f)    force=1; shift ;;
         --dry-run)     DRY_RUN=1; shift ;;
         *)             echo "ERROR: unknown arg '$1'" >&2; show_help >&2; exit 2 ;;
     esac
@@ -74,6 +77,65 @@ maybe_exec() {
         "$@"
     fi
 }
+
+# ---------------------------------------------------------------------------
+# Confirmation prompt — spends real money on Modal + OpenAI
+# ---------------------------------------------------------------------------
+if [[ "${force}" != "1" && "${DRY_RUN}" != "1" ]]; then
+    case "${mode}" in
+        all)
+            cat <<'EOF'
+
+WARNING: Launches Modal jobs that spend real money.
+    - Experiments: ~$280-440 OpenAI, ~24h Modal wall time
+    - Judge:       ~$50-100 OpenAI, several hours Modal wall time
+    - Noise:       ~$20-30 OpenAI, under an hour Modal wall time
+    Total:         ~$350-570 OpenAI, ~24h+ until all jobs complete.
+
+Modal jobs run --detach: this script returns immediately.
+Use --dry-run to preview commands. Use --force to skip this prompt.
+EOF
+            ;;
+        experiments)
+            cat <<'EOF'
+
+WARNING: Launches the experiment orchestrator on Modal.
+    Cost:    ~$280-440 OpenAI calls
+    Runtime: ~24h Modal wall time
+
+Modal job runs --detach: this script returns immediately.
+Use --dry-run to preview commands. Use --force to skip this prompt.
+EOF
+            ;;
+        judge)
+            cat <<'EOF'
+
+WARNING: Launches the LLM judge on Modal.
+    Cost:    ~$50-100 OpenAI calls
+    Runtime: several hours Modal wall time
+
+Modal job runs --detach: this script returns immediately.
+Use --dry-run to preview commands. Use --force to skip this prompt.
+EOF
+            ;;
+        noise)
+            cat <<'EOF'
+
+WARNING: Launches the noise filter on Modal.
+    Cost:    ~$20-30 OpenAI calls
+    Runtime: under an hour Modal wall time
+
+Modal job runs --detach: this script returns immediately.
+Use --dry-run to preview commands. Use --force to skip this prompt.
+EOF
+            ;;
+    esac
+    read -r -p "Continue? [y/N]: " reply
+    case "${reply}" in
+        y|Y|yes|YES) ;;
+        *) echo "Aborted."; exit 0 ;;
+    esac
+fi
 
 # ---------------------------------------------------------------------------
 # Step 1: upload data to Modal Volume
