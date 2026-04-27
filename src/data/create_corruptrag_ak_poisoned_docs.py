@@ -44,6 +44,9 @@ WORD_LIMIT = 30
 
 @app.function(secrets=[modal.Secret.from_name('openai-rag-poisoning')])
 def refine_adversarial_string(query_id: str, question: str, adversarial_string: str) -> dict[str, str]:
+    # Raw openai client (not src.architectures.utils.execute_llm_call): keeps the
+    # Modal image minimal — the util pulls in pydantic/tenacity/qa_system and is
+    # shaped for the experiment loop (Responses API, structured output, reasoning).
     from openai import OpenAI
     client = OpenAI()
     prompt = REFINEMENT_PROMPT.format(question=question, adversarial_string=adversarial_string, word_limit=WORD_LIMIT)

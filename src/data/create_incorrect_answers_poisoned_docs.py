@@ -39,6 +39,9 @@ Respond with ONLY a JSON object in this exact format, no other text:
 
 @app.function(secrets=[modal.Secret.from_name('openai-rag-poisoning')])
 def craft_incorrect_answer(question_text: str, correct_answer: str, passages: str) -> dict[str, str]:
+    # Raw openai client (not src.architectures.utils.execute_llm_call): keeps the
+    # Modal image minimal — the util pulls in pydantic/tenacity/qa_system and is
+    # shaped for the experiment loop (Responses API, structured output, reasoning).
     from openai import OpenAI
     client = OpenAI()
     prompt = incorrect_answer_prompt.format(question=question_text, correct_answer=correct_answer, passages=passages)
