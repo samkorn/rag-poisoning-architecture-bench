@@ -17,6 +17,8 @@
   <a href="paper/paper.pdf"><img src="assets/paper_thumbnail.png" width="50%" alt="Paper — click to open PDF"></a>
 </p>
 
+*Reading this as raw markdown? See [README.raw.md](README.raw.md) for a version stripped of HTML tags and the mermaid diagram.*
+
 ## Overview
 
 Retrieval-Augmented Generation systems are vulnerable to knowledge base poisoning, yet existing attacks have been evaluated almost exclusively against vanilla retrieve-then-generate pipelines. Meanwhile, architectures designed to handle conflicting retrieved information — multi-agent debate, agentic retrieval, recursive language models — have never been tested against adversarially optimized contradictions. We bridge this gap by evaluating four RAG architectures (vanilla, agentic, MADAM-RAG, and Recursive Language Models) under controlled single-document (N=1) poisoning on 921 question-answer pairs from Natural Questions. We test each against a clean baseline, naive injection, and CorruptRAG-AK, an adversarial attack whose meta-epistemic framing directly targets credibility assessment.
