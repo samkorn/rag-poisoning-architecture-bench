@@ -280,6 +280,154 @@ class ScriptPrereqFailureUnitTests(unittest.TestCase):
         self.assertIn('paper directory not found', result.stderr)
 
 
+class ScriptConfirmationPromptUnitTests(unittest.TestCase):
+    """Scripts that overwrite committed deliverables or spend money on
+    Modal/OpenAI expose a y/N confirmation prompt + a ``--force`` flag to
+    skip it. Without ``--force``, they prompt; with ``--force``, they
+    proceed unattended.
+
+    Tests build a fake repo with all prereqs satisfied + stub venv
+    binaries + (for Modal scripts) a fake Modal config. The downstream
+    operations are stubbed to exit 0, so the script can reach the prompt
+    and proceed past it without spending real money or wall time.
+    """
+
+    def setUp(self) -> None:
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self._fake_root = Path(self._tmpdir.name)
+        _build_fake_venv(self._fake_root)
+        # run_all.sh chains to these — stub them so its dry-run works here.
+        _build_fake_downstream_scripts(self._fake_root)
+
+        # Prereqs for run_analysis.sh
+        for d in ('src/experiments/results/experiments',
+                  'src/experiments/results/judge',
+                  'src/experiments/results/noise'):
+            (self._fake_root / d).mkdir(parents=True, exist_ok=True)
+        analysis_dir = self._fake_root / 'analysis'
+        analysis_dir.mkdir(parents=True, exist_ok=True)
+        (analysis_dir / 'human_labels.csv').touch()
+        (analysis_dir / 'analysis.ipynb').touch()
+
+        # Fake HOME so run_experiments.sh's ~/.modal.toml check passes.
+        self._fake_home = Path(self._tmpdir.name) / 'home'
+        self._fake_home.mkdir()
+        (self._fake_home / '.modal.toml').touch()
+
+    def tearDown(self) -> None:
+        self._tmpdir.cleanup()
+
+    def _run_with_stdin(self, script: str, *args: str, stdin: str = '',
+                        ) -> subprocess.CompletedProcess:
+        env = os.environ.copy()
+        env.update({
+            'REPO_ROOT': str(self._fake_root),
+            'HOME': str(self._fake_home),
+        })
+        return subprocess.run(
+            [str(SCRIPTS_DIR / script), *args],
+            input=stdin, capture_output=True, text=True, env=env,
+        )
+
+    # ---- run_analysis.sh -------------------------------------------------
+
+    # NOTE on prompt detection: `bash read -p` only prints the prompt text
+    # when stdin is a TTY (per the bash manual). Tests pipe stdin via
+    # subprocess, which is non-TTY, so the literal "Continue?" string
+    # never appears anywhere even when the prompt fires. We instead use:
+    #   - WARNING text (printed via cat/echo before the read) as proof
+    #     the prompt step was reached
+    #   - "Aborted." (printed via echo after rejection) as proof the prompt
+    #     fired and got rejected
+    #   - "==> Executing" or similar downstream banner as proof the prompt
+    #     fired and got accepted (or was bypassed by --force)
+
+    def test_run_analysis_force_skips_prompt(self):
+        """``--force`` proceeds past the prompt without reading stdin."""
+        result = self._run_with_stdin('run_analysis.sh', '--force')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        # No WARNING text means the prompt block was skipped entirely.
+        self.assertNotIn('WARNING', result.stdout)
+        self.assertIn('Executing analysis/analysis.ipynb', result.stdout)
+
+    def test_run_analysis_n_aborts(self):
+        """Piping 'n' rejects the prompt cleanly without executing."""
+        result = self._run_with_stdin('run_analysis.sh', stdin='n\n')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('WARNING', result.stdout)  # prompt block ran
+        self.assertIn('Aborted', result.stdout)  # rejected
+        self.assertNotIn('Executing analysis/analysis.ipynb', result.stdout)
+
+    def test_run_analysis_warning_text_present(self):
+        """Warning lists the directories that get overwritten."""
+        result = self._run_with_stdin('run_analysis.sh', stdin='n\n')
+        self.assertIn('analysis/figures/', result.stdout)
+        self.assertIn('paper/tables/', result.stdout)
+        self.assertIn('5-10 minutes', result.stdout)
+
+    # ---- run_experiments.sh ---------------------------------------------
+
+    def test_run_experiments_force_skips_prompt(self):
+        result = self._run_with_stdin('run_experiments.sh', '--force', '--noise')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn('WARNING', result.stdout)
+        self.assertNotIn('Aborted', result.stdout)
+
+    def test_run_experiments_n_aborts(self):
+        result = self._run_with_stdin('run_experiments.sh', '--noise', stdin='n\n')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('WARNING', result.stdout)
+        self.assertIn('Aborted', result.stdout)
+
+    def test_run_experiments_warning_is_phase_aware(self):
+        """The cost / runtime estimates differ per phase."""
+        all_out = self._run_with_stdin('run_experiments.sh', stdin='n\n').stdout
+        noise_out = self._run_with_stdin('run_experiments.sh', '--noise', stdin='n\n').stdout
+        self.assertIn('$280-440', all_out)  # full-pipeline experiments cost
+        self.assertIn('$20-30', noise_out)  # noise-only cost
+        self.assertNotIn('$280-440', noise_out)
+
+    def test_run_experiments_dry_run_skips_prompt(self):
+        """``--dry-run`` bypasses the prompt (no stdin needed)."""
+        result = self._run_with_stdin('run_experiments.sh', '--dry-run')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn('WARNING', result.stdout)
+
+    # ---- run_all.sh ------------------------------------------------------
+    #
+    # No standalone --force test for run_all.sh: the --force pattern is
+    # identical to the other two scripts (already covered) and the only
+    # way to exercise --force without --dry-run is to also stub every
+    # downstream script the chain invokes, which is more setup than the
+    # test is worth.
+
+    def test_run_all_n_aborts(self):
+        result = self._run_with_stdin('run_all.sh', '--analysis-only', stdin='n\n')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('analysis-only pipeline', result.stdout)  # warning fired
+        self.assertIn('Aborted', result.stdout)
+
+    def test_run_all_warning_is_mode_aware(self):
+        default_out = self._run_with_stdin('run_all.sh', stdin='n\n').stdout
+        resume_out = self._run_with_stdin('run_all.sh', '--resume', stdin='n\n').stdout
+        analysis_only_out = self._run_with_stdin(
+            'run_all.sh', '--analysis-only', stdin='n\n',
+        ).stdout
+        # Default mode warns about real cost
+        self.assertIn('$300-450', default_out)
+        self.assertIn('over 24 hours', default_out)
+        # Resume + analysis-only are free / fast
+        self.assertIn('free', resume_out)
+        self.assertIn('free', analysis_only_out)
+        self.assertNotIn('$300-450', resume_out)
+        self.assertNotIn('$300-450', analysis_only_out)
+
+    def test_run_all_dry_run_skips_prompt(self):
+        result = self._run_with_stdin('run_all.sh', '--dry-run')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn('WARNING', result.stdout)
+
+
 class ScriptShellcheckUnitTests(unittest.TestCase):
     """Optional static analysis. Skipped when shellcheck isn't installed."""
 

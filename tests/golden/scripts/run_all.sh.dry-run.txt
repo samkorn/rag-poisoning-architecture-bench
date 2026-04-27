@@ -8,7 +8,7 @@
 [stub prepare_embeddings.sh] args: --dry-run
 
 ==> [4/4] run_experiments.sh --experiments (orchestrator, detached)
-[stub run_experiments.sh] args: --experiments --dry-run
+[stub run_experiments.sh] args: --experiments --force --dry-run
 
 ================================================================
 Experiments are running detached on Modal. When they finish:
