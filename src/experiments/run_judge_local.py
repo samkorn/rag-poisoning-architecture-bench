@@ -153,7 +153,7 @@ def run_validation(
         os.makedirs(exp_dir, exist_ok=True)
         judge_path = os.path.join(exp_dir, f'{question_id}.json')
 
-        target_answer = row.get('target_answer') or None
+        target_answer = row.get('target_answer')
 
         q_start = time.monotonic()
         result = evaluate_response(
