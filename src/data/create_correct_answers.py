@@ -31,6 +31,9 @@ Answer:
 
 @app.function(secrets=[modal.Secret.from_name('openai-rag-poisoning')])
 def craft_correct_answer(question_text: str, document_texts: str) -> str:
+    # Raw openai client (not src.architectures.utils.execute_llm_call): keeps the
+    # Modal image minimal — the util pulls in pydantic/tenacity/qa_system and is
+    # shaped for the experiment loop (Responses API, structured output, reasoning).
     from openai import OpenAI
     client = OpenAI()
     prompt = correct_answer_prompt.format(question=question_text, passages=document_texts)

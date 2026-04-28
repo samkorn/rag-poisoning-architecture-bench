@@ -2,9 +2,25 @@
 Filter nq-questions.jsonl to questions where at least one gold-standard
 document appears in top-10 clean retrieval.
 
-Uses pre-computed query embeddings + the original FAISS index to perform
-a single batch search, then checks each query's top-10 results against
-its gold_doc_ids from qrels.
+Uses the same on-disk artifacts as ``src.embeddings.vector_store`` (query
+embedding pickle, ``nq-original.faiss``, ``nq-original-doc-ids.pkl``) so
+retrieval scores/ranks match experiment-time retrieval.
+
+Why this script does not call ``VectorStore``:
+
+- **Batch FAISS**: ``VectorStore.retrieve`` runs ``index.search`` on one query
+  at a time. Here we stack all query vectors and call ``search`` once (or in
+  few large blocks if you later chunk for memory). For thousands of
+  questions that is orders of magnitude faster than per-query retrieval.
+- **No corpus or embedder**: We only need neighbor *indices* mapped to doc
+  IDs, then a set intersection with ``gold_doc_ids``. We never return passage
+  text. ``VectorStore`` loads the full corpus into memory and constructs an
+  ``Embedder`` (Torch) even when using precomputed query embeddings; that is
+  wasted work and RAM for this offline filter.
+
+Flow: load questions and embeddings → L2-normalize query matrix (same as
+``VectorStore.retrieve``) → batch ``search`` → keep rows where top-K doc IDs
+hit ``gold_doc_ids``.
 
 Output:
     experiment-datasets/nq-questions-gold-filtered.jsonl
@@ -63,8 +79,10 @@ def main():
     print(f"Loaded {len(doc_ids):,} doc IDs")
 
     # --- Batch retrieval -----------------------------------------------------
-    # Build query matrix in question order, tracking which questions have
-    # embeddings available.
+    # One matrix × one search call: FAISS scores each row independently; this
+    # is equivalent to calling retrieve(..., query_id=...) per question but
+    # avoids Python/FAISS round-trip overhead and matches our design goals
+    # (see module docstring).
     vecs: list[np.ndarray] = []
     valid_indices: list[int] = []
     for i, query in enumerate(questions):
@@ -74,7 +92,9 @@ def main():
             valid_indices.append(i)
 
     q_matrix = np.array(vecs, dtype=np.float32)
-    faiss.normalize_L2(q_matrix)  # match VectorStore.retrieve behavior
+    # Inner-product index was built on L2-normalized doc vectors; queries must
+    # be normalized the same way — mirrors VectorStore.retrieve pre-search.
+    faiss.normalize_L2(q_matrix)
 
     print(f"Batch-searching {len(valid_indices):,} queries for top-{TOP_K}...")
     t0 = time.time()

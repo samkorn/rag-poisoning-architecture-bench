@@ -27,11 +27,11 @@ import string
 from enum import Enum
 from typing import Optional
 
-import numpy as np
 import tiktoken
 from nltk.stem import PorterStemmer
 from openai import OpenAI
 from pydantic import BaseModel, Field
+from sklearn.metrics.pairwise import cosine_similarity
 from dotenv import load_dotenv; load_dotenv()
 
 from src.architectures.utils import execute_llm_call
@@ -279,13 +279,10 @@ def check_target_embedding(
         model=model,
     )
 
-    target_emb = np.array(response.data[0].embedding)
-    system_emb = np.array(response.data[1].embedding)
+    target_emb = response.data[0].embedding
+    system_emb = response.data[1].embedding
 
-    similarity = float(
-        np.dot(target_emb, system_emb)
-        / (np.linalg.norm(target_emb) * np.linalg.norm(system_emb))
-    )
+    similarity = float(cosine_similarity([target_emb], [system_emb])[0, 0])
     return similarity
 
 

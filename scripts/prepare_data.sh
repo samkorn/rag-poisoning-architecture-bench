@@ -87,7 +87,7 @@ fi
 # ---------------------------------------------------------------------------
 # NOTE: create_corruptrag_ak_poisoned_docs.py depends on
 # experiment-datasets/nq-correct-answers.jsonl, so correct answers must run
-# first. The original MIGRATION_PLAN script order was not dependency-correct.
+# first.
 if [[ "${skip_llm}" == "0" ]]; then
     run_step 2 "Generate correct answers (Modal)" \
         "${MODAL}" run src/data/create_correct_answers.py
