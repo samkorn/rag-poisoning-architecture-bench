@@ -166,7 +166,7 @@ class ModulePathsIntegrationTests(unittest.TestCase):
         from src.experiments.llm_judge import (
             RESULTS_DIR, EXPERIMENTS_DIR, JUDGE_RESULTS_DIR, load_judge_prompt,
         )
-        from src.experiments.noise_filter import QUESTIONS_PATH, NOISE_OUTPUT_DIR
+        from src.experiments.noise_filter import QUERIES_PATH, NOISE_OUTPUT_DIR
         from src.experiments.run_judge_local import REVIEW_CSV, _RESULTS_DIR
 
         self.assertTrue(os.path.isdir(RESULTS_DIR))
@@ -175,7 +175,7 @@ class ModulePathsIntegrationTests(unittest.TestCase):
         self.assertTrue(os.path.isdir(JUDGE_RESULTS_DIR))
         self.assertTrue(os.path.isdir(NOISE_OUTPUT_DIR))
         self.assertTrue(os.path.isdir(_RESULTS_DIR))
-        self.assertTrue(os.path.exists(QUESTIONS_PATH))
+        self.assertTrue(os.path.exists(QUERIES_PATH))
         self.assertTrue(os.path.exists(REVIEW_CSV))
 
         # Judge prompt loads + has expected placeholders.
@@ -197,7 +197,7 @@ class ModulePathsIntegrationTests(unittest.TestCase):
     def test_cross_directory_paths(self):
         """Paths that cross src/ subdirectory boundaries resolve correctly."""
         from src.embeddings.vector_store import VECTOR_STORE_DIR, _DATA_BASE
-        from src.experiments.noise_filter import QUESTIONS_PATH
+        from src.experiments.noise_filter import QUERIES_PATH
         from src.experiments.run_judge_local import REVIEW_CSV
 
         db_real = os.path.realpath(_DATA_BASE)
@@ -205,7 +205,7 @@ class ModulePathsIntegrationTests(unittest.TestCase):
         self.assertIn('data', db_real)
         self.assertIn('vector-store', vs_real)
 
-        qp_real = os.path.realpath(QUESTIONS_PATH)
+        qp_real = os.path.realpath(QUERIES_PATH)
         self.assertIn('experiment-datasets', qp_real)
 
         rc_real = os.path.realpath(REVIEW_CSV)

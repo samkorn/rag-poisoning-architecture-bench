@@ -37,7 +37,9 @@ from dotenv import load_dotenv; load_dotenv()
 DEFAULT_MODEL = 'gpt-5-mini'
 DEFAULT_REASONING_EFFORT = 'high'
 
-QUESTIONS_PATH = os.path.join(
+# Filename keeps the legacy "nq-questions" prefix; the file is a list of
+# query records (id + question text + answers + gold_doc_ids).
+QUERIES_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
     '..', 'data', 'experiment-datasets',
     'nq-questions-gold-filtered.jsonl',
@@ -172,10 +174,14 @@ def check_noise(
 # Batch runner
 # ---------------------------------------------------------------------------
 
-def load_questions(questions_path: str) -> list[dict]:
-    """Load query records from gold-filtered JSONL."""
+def load_questions(queries_path: str) -> list[dict]:
+    """Load query records from gold-filtered JSONL.
+
+    Function name kept as ``load_questions`` for backwards compatibility
+    with other callers; the loaded records are full query records.
+    """
     queries = []
-    with open(questions_path) as f:
+    with open(queries_path) as f:
         for line in f:
             line_dict = json.loads(line)
             queries.append(line_dict)
@@ -183,7 +189,7 @@ def load_questions(questions_path: str) -> list[dict]:
 
 
 def run_noise_filter(
-    questions_path: str = QUESTIONS_PATH,
+    queries_path: str = QUERIES_PATH,
     output_dir: str = NOISE_OUTPUT_DIR,
     model: str = DEFAULT_MODEL,
     reasoning_effort: str = DEFAULT_REASONING_EFFORT,
@@ -194,7 +200,7 @@ def run_noise_filter(
     """Run noise filter with per-query checkpointing.
 
     Args:
-        questions_path: Path to gold-filtered queries JSONL.
+        queries_path: Path to gold-filtered queries JSONL.
         output_dir: Directory for per-query result JSONs.
         model: Model ID for noise classification.
         reasoning_effort: Reasoning effort level.
@@ -205,7 +211,7 @@ def run_noise_filter(
     Returns list of result dicts (including cached).
     """
     os.makedirs(output_dir, exist_ok=True)
-    queries = load_questions(questions_path)
+    queries = load_questions(queries_path)
 
     if query_ids is not None:
         queries = [query for query in queries if query['query_id'] in query_ids]
@@ -236,6 +242,9 @@ def run_noise_filter(
             except (json.JSONDecodeError, OSError):
                 pass
 
+        # 'question_id' key matches the on-disk schema for noise JSONs (kept
+        # for backwards compatibility with persisted results); value is a
+        # query_id.
         result = {
             'question_id': query_id,
             'question': query['question'],
@@ -433,8 +442,8 @@ def main():
     parser.add_argument(
         '--questions', '-q',
         type=str,
-        default=QUESTIONS_PATH,
-        help=f"Path to questions JSONL (default: gold-filtered)",
+        default=QUERIES_PATH,
+        help=f"Path to queries JSONL (default: gold-filtered)",
     )
     parser.add_argument(
         '--output-dir', '-o',
@@ -487,7 +496,7 @@ def main():
     print()
 
     run_noise_filter(
-        questions_path=args.questions,
+        queries_path=args.questions,
         output_dir=args.output_dir,
         model=args.model,
         reasoning_effort=args.reasoning_effort,

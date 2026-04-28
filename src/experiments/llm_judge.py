@@ -312,6 +312,8 @@ def evaluate_response(
     """
     target_str = target_answer or 'none'
 
+    # 'question_id' key matches the on-disk schema for judge JSONs (kept for
+    # backwards compatibility with persisted results); the value is a query_id.
     result = {
         'experiment_id': experiment_id,
         'question_id': query_id,

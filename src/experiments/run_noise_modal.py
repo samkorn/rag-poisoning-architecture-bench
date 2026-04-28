@@ -72,7 +72,7 @@ _EXPERIMENTS_DIR = os.path.dirname(os.path.abspath(__file__))
     max_containers=99,
 )
 def classify_noise(
-    query_dict: dict,
+    query: dict,
     model: str,
     reasoning_effort: str,
     web_search: bool = True,
@@ -84,12 +84,14 @@ def classify_noise(
 
     from src.experiments.noise_filter import check_noise
 
-    query_id = query_dict['query_id']
+    query_id = query['query_id']
+    # 'question_id' key matches the on-disk schema for noise JSONs (kept for
+    # backwards compatibility with persisted results); value is a query_id.
     result = {
         'question_id': query_id,
-        'question': query_dict['question'],
-        'correct_answer': query_dict['correct_answer'],
-        'target_answer': query_dict['target_answer'],
+        'question': query['question'],
+        'correct_answer': query['correct_answer'],
+        'target_answer': query['target_answer'],
         'model': model,
         'reasoning_effort': reasoning_effort,
         'web_search': web_search,
@@ -107,9 +109,9 @@ def classify_noise(
     try:
         t0 = time.monotonic()
         noise_result, usage = check_noise(
-            question=query_dict['question'],
-            correct_answer=query_dict['correct_answer'],
-            target_answer=query_dict['target_answer'],
+            question=query['question'],
+            correct_answer=query['correct_answer'],
+            target_answer=query['target_answer'],
             model=model,
             reasoning_effort=reasoning_effort,
             web_search=web_search,

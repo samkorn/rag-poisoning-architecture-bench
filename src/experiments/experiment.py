@@ -74,10 +74,17 @@ class ExperimentConfig:
 
 @dataclass
 class QuestionResult:
-    """Result for a single question within an experiment."""
+    """Result for a single query within an experiment.
+
+    The class name and the ``question_id`` / ``question_text`` field names
+    are kept (rather than ``QueryResult`` / ``query_id`` / ``question``) to
+    preserve the on-disk JSON schema across all ~14k persisted result files.
+    Per the project naming standard, "query" is the conceptual identifier;
+    the JSON keys are the legacy schema names.
+    """
 
     experiment_id: str
-    question_id: str  # query_id (on-disk schema field name preserved)
+    question_id: str  # on-disk schema field; conceptually the query_id
     question_text: str  # the natural-language question text
     correct_answer: str
     target_answer: Optional[str]  # Attacker's desired wrong answer (None for clean)
@@ -425,7 +432,11 @@ def run_single_question(
     question_num: Optional[int] = None,
     batch_size: Optional[int] = None,
 ) -> QuestionResult:
-    """Execute one question through the configured architecture.
+    """Execute one query through the configured architecture.
+
+    Function name kept as ``run_single_question`` (rather than
+    ``run_single_query``) for stability — it is referenced by Modal log
+    history and downstream scripts.
 
     Delegates to ``_run_single_question`` via a retry+timeout wrapper
     (per-question 10-min ceiling, auto-dispatched signal/multiproc by
@@ -477,6 +488,10 @@ def run_question_batch(
     modal_volume=None,  # Optional Modal Volume — reload before / commit after each query
 ) -> dict:
     """Process a batch of queries for one experiment.
+
+    Function name kept as ``run_question_batch`` (rather than
+    ``run_query_batch``) for stability — it is referenced by Modal log
+    history and downstream scripts.
 
     Called by each of the 99 Modal worker containers.  Resources (VectorStore,
     QASystem) are loaded once per container, then queries are processed

@@ -162,15 +162,15 @@ class NoiseFilterIntegrationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        from src.experiments.noise_filter import QUESTIONS_PATH, NOISE_OUTPUT_DIR
-        _data_present_or_skip(QUESTIONS_PATH)
+        from src.experiments.noise_filter import QUERIES_PATH, NOISE_OUTPUT_DIR
+        _data_present_or_skip(QUERIES_PATH)
         if not os.path.isdir(NOISE_OUTPUT_DIR):
             raise unittest.SkipTest(f"Missing noise output dir: {NOISE_OUTPUT_DIR}")
-        cls.questions_path = QUESTIONS_PATH
+        cls.queries_path = QUERIES_PATH
         cls.noise_output_dir = NOISE_OUTPUT_DIR
 
     def test_questions_file_loads_at_expected_count(self):
-        with open(self.questions_path) as f:
+        with open(self.queries_path) as f:
             queries = [json.loads(line) for line in f]
         self.assertEqual(len(queries), 1150)
 

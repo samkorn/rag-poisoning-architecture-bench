@@ -66,6 +66,8 @@ def main():
 
     os.makedirs(os.path.join(_DATA_DIR, 'experiment-datasets'), exist_ok=True)
 
+    # Filename keeps the "nq-questions" prefix; the file is a list of full
+    # query records (id + question text + answers + gold_doc_ids).
     qjsonl_path = os.path.join(_DATA_DIR, 'experiment-datasets', 'nq-questions.jsonl')
     with open(qjsonl_path, 'w') as f:
         for query_id in query_ids:
