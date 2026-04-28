@@ -1,14 +1,15 @@
 """Agentic RAG implementation backed by PydanticAI's tool-use loop.
 
-The agent is given a single tool, `search_knowledge_base`, that wraps the
-shared `VectorStore`. The model decides when to retrieve, how many times,
-and when to stop, in contrast to the fixed retrieve-then-generate flow of
-Vanilla RAG.
+The agent is given two tools — `search_knowledge_base` (top-K
+retrieval over the shared `VectorStore`) and `get_document_by_id`
+(direct fetch by doc ID) — and decides when to retrieve, how many
+times, and when to stop, in contrast to the fixed
+retrieve-then-generate flow of Vanilla RAG.
 
 Notes:
-    Logfire instrumentation is configured at import time, but only when
-    running locally (skipped inside Modal containers to avoid emitting
-    traces from worker processes).
+    Logfire instrumentation is configured at import time, but only
+    when running locally (skipped inside Modal containers to avoid
+    emitting traces from worker processes).
 """
 
 import modal
