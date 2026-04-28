@@ -195,6 +195,14 @@ class RetrievalCapture:
             answer = qa_system._run(question_text, query_id)
         # capture.retrieve_calls  — list of {kwargs, results} per retrieve() call
         # capture.doc_fetches     — list of doc_ids fetched via get_document_from_doc_id()
+
+    Design note: monkeypatch over the obvious alternatives because (a) Agentic
+    RAG dispatches through Pydantic AI's tool loop and RLM through the
+    third-party ``rlm`` library, so a wrapper VectorStore would have to be
+    plumbed through APIs we don't own, and (b) instrumenting VectorStore
+    itself puts per-question state on a process-lifetime singleton, which
+    breaks silently under the tenacity retry on _run_single_question. The
+    context-manager scoping makes the patch self-cleaning even on exception.
     """
 
     def __init__(self, vector_store):
