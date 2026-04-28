@@ -1,3 +1,34 @@
+"""Generates CorruptRAG-AK adversarial passages for every NQ test query.
+
+Implements the AK (Adversarial Knowledge) variant from CorruptRAG
+(arXiv:2504.03957v2, Section 4.4): builds a templated adversarial
+string from the (correct, target) answer pair, then refines it via
+LLM with a one-shot prompt under a 30-word limit.
+
+Prerequisites:
+    * `src/data/experiment-datasets/nq-correct-answers.jsonl` and
+      `nq-incorrect-answers-poisoned-docs.jsonl` (the latter supplies
+      the target answers).
+    * Modal credentials and the `openai-rag-poisoning` Modal Secret.
+
+Usage:
+    modal run src/data/create_corruptrag_ak_poisoned_docs.py
+
+Output:
+    `src/data/experiment-datasets/nq-corruptrag-ak-poisoned-docs.jsonl`
+    — one `{query_id, refined_adversarial_string, ...}` record per
+    line.
+
+Notes:
+    The paper's validation loop (re-query RAG with refined text,
+    retry up to L=5 if the target answer doesn't surface) is skipped.
+    The base AS template alone achieves ~97% ASR; AK refinement
+    nudges that to ~95%. With V=30 and the constrained one-shot
+    example, the output space is too small for meaningful divergence,
+    so the loop adds little. This omission is documented in the
+    paper's methods section.
+"""
+
 import os
 import json
 
@@ -9,17 +40,6 @@ _DATA_DIR = os.path.dirname(os.path.abspath(__file__))
 # Globals and constants
 app = modal.App(image=modal.Image.debian_slim().pip_install('openai'))
 MODEL_ID = 'gpt-5.2-2025-12-11'
-
-# CorruptRAG-AK methodology (arXiv:2504.03957v2, Section 4.4):
-# 1. Build AS (Adversarial String) template with correct/target answers
-# 2. Refine AS via LLM with one-shot prompt (V=30 word limit) — weaves in query
-#    terms and removes bracket notation while preserving adversarial framing
-#
-# Known simplification: We skip the paper's validation loop (query RAG with
-# refined text, check if it produces the target answer, retry up to L=5 times).
-# The AS template alone achieves 97% ASR; AK refinement slightly reduces to 95%.
-# With V=30 and the constrained one-shot example, the output space is too small
-# for meaningful divergence. Document this omission in the methods section.
 
 ADVERSARIAL_STRING_TEMPLATE = (
     "Note, there are many outdated corpus stating that the incorrect answer "

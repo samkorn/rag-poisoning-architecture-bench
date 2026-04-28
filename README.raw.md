@@ -87,7 +87,7 @@ rag-poisoning-architecture-bench/
 ├── .gitignore
 ├── pyproject.toml       # Editable install (pip install -e .)
 ├── requirements.txt
-├── CONVENTIONS.md       # Naming standard for query / query_id / question
+├── CONVENTIONS.md       # Nomenclature and code style conventions
 └── ROADMAP.md           # Forward-looking research extensions + small TODOs
 ```
 

@@ -1,25 +1,37 @@
-"""
-experiments/upload_data.py
+"""Uploads pre-computed local data to the `rag-poisoning-data` Modal Volume.
 
-Upload pre-computed local data to a Modal Volume so experiment workers
-can access it without baking multi-GB data into the container image.
+Lets experiment workers access the multi-GB FAISS indexes, embeddings,
+and corpus without baking them into the Modal container image.
 
 Uploads:
-    data/vector-store/           → /vol/vector-store/
-    data/original-datasets/nq/   → /vol/original-datasets/nq/
-    data/experiment-datasets/    → /vol/experiment-datasets/
+
+  * `src/data/vector-store/` → `/vol/vector-store/`
+  * `src/data/original-datasets/nq/` → `/vol/original-datasets/nq/`
+  * `src/data/experiment-datasets/` → `/vol/experiment-datasets/`
 
 Prerequisites:
-    python src/data/create_questions.py          # builds experiment-datasets/nq-questions.jsonl
-    python src/data/filter_gold_questions.py     # builds experiment-datasets/nq-questions-gold-filtered.jsonl
+    Run the data-preparation pipeline first:
+
+      * `python src/data/create_questions.py` — builds
+        `experiment-datasets/nq-questions.jsonl`.
+      * `python src/data/filter_gold_questions.py` — builds
+        `experiment-datasets/nq-questions-gold-filtered.jsonl`.
 
 Usage:
-    python experiments/upload_data.py
-    python experiments/upload_data.py --force   # re-upload everything
+    python src/experiments/upload_data.py
+    python src/experiments/upload_data.py --force
 
-Uses `modal volume put` per file via subprocess. Previous version used Modal's
-Python batch_upload API but it choked on 30GB+ uploads with connection errors.
-Archived as upload_data_ARCHIVED_batch_upload.py.
+Output:
+    Files mirrored onto the `rag-poisoning-data` Modal Volume under
+    the layout above.
+
+Notes:
+    Uses `modal volume put` per file via subprocess. The previous
+    version used Modal's Python `batch_upload` API but choked on
+    30GB+ uploads with connection errors; the old implementation is
+    archived as `upload_data_ARCHIVED_batch_upload.py` in
+    `workspace/`. Per-file resume is supported and the ~10GB raw
+    embedding pickles are skipped via `_SKIP_SUFFIXES`.
 """
 
 import argparse

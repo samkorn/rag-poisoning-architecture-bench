@@ -1,32 +1,40 @@
-"""
-Filter nq-questions.jsonl to queries where at least one gold-standard
-document appears in top-10 clean retrieval.
+"""Filters `nq-questions.jsonl` down to queries whose gold doc appears in top-10 clean retrieval.
 
-Uses the same on-disk artifacts as ``src.embeddings.vector_store`` (query
-embedding pickle, ``nq-original.faiss``, ``nq-original-doc-ids.pkl``) so
-retrieval scores/ranks match experiment-time retrieval.
+Uses the same on-disk artifacts as `src.embeddings.vector_store`
+(query embedding pickle, `nq-original.faiss`, `nq-original-doc-ids.pkl`)
+so retrieval scores/ranks match experiment-time retrieval.
 
-Why this script does not call ``VectorStore``:
+Flow: load queries and embeddings → L2-normalize query matrix (same
+as `VectorStore.retrieve`) → batch `search` → keep rows where top-K
+doc IDs hit `gold_doc_ids`.
 
-- **Batch FAISS**: ``VectorStore.retrieve`` runs ``index.search`` on one query
-  at a time. Here we stack all query vectors and call ``search`` once (or in
-  few large blocks if you later chunk for memory). For thousands of
-  queries that is orders of magnitude faster than per-query retrieval.
-- **No corpus or embedder**: We only need neighbor *indices* mapped to doc
-  IDs, then a set intersection with ``gold_doc_ids``. We never return passage
-  text. ``VectorStore`` loads the full corpus into memory and constructs an
-  ``Embedder`` (Torch) even when using precomputed query embeddings; that is
-  wasted work and RAM for this offline filter.
-
-Flow: load queries and embeddings → L2-normalize query matrix (same as
-``VectorStore.retrieve``) → batch ``search`` → keep rows where top-K doc IDs
-hit ``gold_doc_ids``.
-
-Output:
-    experiment-datasets/nq-questions-gold-filtered.jsonl
+Prerequisites:
+    * `nq-questions.jsonl` from `create_questions.py`.
+    * `nq-original.faiss` and `nq-original-doc-ids.pkl` in
+      `src/data/vector-store/` (built by
+      `src/embeddings/build_vector_indexes.py`).
+    * `nq-queries-embeddings.pkl` in `src/data/vector-store/` (built
+      by `src/embeddings/embed_datasets.py`).
 
 Usage:
     python src/data/filter_gold_questions.py
+
+Output:
+    `src/data/experiment-datasets/nq-questions-gold-filtered.jsonl`
+
+Notes:
+    Does not reuse `VectorStore` for two reasons:
+
+      * Batch FAISS: `VectorStore.retrieve` runs `index.search` on one
+        query at a time. Here we stack all query vectors and call
+        `search` once (or in few large blocks). For thousands of
+        queries that's orders of magnitude faster.
+      * No corpus or embedder: we only need neighbor *indices* mapped
+        to doc IDs, then a set intersection with `gold_doc_ids`. We
+        never return passage text. `VectorStore` loads the full
+        corpus into memory and constructs an `Embedder` (Torch) even
+        when using precomputed query embeddings — wasted work and
+        RAM for this offline filter.
 """
 
 import json

@@ -1,19 +1,19 @@
-"""
-experiments/noise_filter.py
+"""NOISE filter — identifies questions where the target answer is also a plausible correct answer.
 
-NOISE filter: identifies questions where the target answer is also a
-plausible correct answer, making ASR unmeasurable. These questions are
-excluded from attack metrics.
-
-Runs once per question (not per experiment) on the 1,150 gold-doc-filtered
-questions. Uses the model's parametric knowledge (not retrieved documents).
+These questions make ASR unmeasurable (the model can't tell whether
+the attack succeeded or the model just happened to pick a co-valid
+answer) and are excluded from attack metrics. Runs once per question
+(not per experiment) on the 1,150 gold-doc-filtered queries, using
+the model's parametric knowledge rather than retrieved documents.
 
 Core functions:
-  - check_noise()           — single LLM noise classification
-  - run_noise_filter()      — batch with per-question checkpointing
-  - load_noise_exclusions() — load exclusion set from results dir
-  - print_report()          — summary of cached noise results
-  - main()                  — CLI entry point
+
+  * `check_noise` — single LLM noise classification.
+  * `run_noise_filter` — batch with per-question checkpointing.
+  * `load_noise_exclusions` — load exclusion set from the results
+    directory.
+  * `print_report` — summary of cached noise results.
+  * `main` — CLI entry point.
 """
 
 import argparse

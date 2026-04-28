@@ -1,8 +1,8 @@
-"""Unit tests for src.experiments.orchestrator (pure-Python helpers).
+"""Unit tests for `src.experiments.orchestrator` (pure-Python helpers).
 
-Covers ``build_experiment_matrix()`` shape/contents and
-``is_experiment_complete()`` file-count logic. Also round-trips
-``ExperimentConfig`` through ``to_dict()`` / reconstruction (the
+Covers `build_experiment_matrix()` shape/contents and
+`is_experiment_complete()` file-count logic. Also round-trips
+`ExperimentConfig` through `to_dict()` / reconstruction (the
 serialization contract the Modal worker relies on).
 
 No data, no Modal, no API calls — runs in the unit suite.

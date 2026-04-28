@@ -1,22 +1,27 @@
-"""
-experiments/run_noise_modal.py
+"""Modal runner for the NOISE filter — parallelizes noise classification across up to 99 containers.
 
-Modal runner for the NOISE filter — parallelizes noise classification
-across up to 99 containers.
+Prerequisites:
+    Modal credentials, the `openai-rag-poisoning` Modal Secret, and
+    `nq-questions-gold-filtered.jsonl` produced by
+    `src/data/filter_gold_questions.py`.
 
-Usage (from root directory):
-    # Full run (1,150 questions, writes to Modal Volume, downloads locally)
+Usage:
     modal run --detach src/experiments/run_noise_modal.py
-
-    # Dry run (no API calls, just show what would be done)
     modal run src/experiments/run_noise_modal.py --dry-run
-
-    # Download results + report only (no new classification)
     python src/experiments/run_noise_modal.py --report-only
-
-    # Override model / disable web search
     modal run --detach src/experiments/run_noise_modal.py --model gpt-5-nano
     modal run --detach src/experiments/run_noise_modal.py --no-web-search
+
+Output:
+    Per-question NOISE JSONs under `/vol/results/noise/` on the Modal
+    Volume; downloaded locally to `src/experiments/results/noise/`
+    after each run. Each JSON contains the model's NOISE/non-NOISE
+    classification plus reasoning.
+
+Notes:
+    Run all commands from the repo root — the Modal image mounts
+    `src/__init__.py`, `src/experiments/__init__.py`, and
+    `src/experiments/noise_filter.py` using paths relative to CWD.
 """
 
 import json

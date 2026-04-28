@@ -1,3 +1,17 @@
+"""Vanilla RAG: the retrieve-then-generate baseline.
+
+Single retrieval call (`top_k` documents from `VectorStore`), then a
+single LLM call with the concatenated context. No tool use, no
+debate, no iteration.
+
+Usage:
+    python src/architectures/vanilla_rag.py
+
+Output:
+    Sanity-check answers printed to stdout for two hand-picked
+    questions (one in-corpus, one out-of-corpus). No files written.
+"""
+
 import os
 import time
 

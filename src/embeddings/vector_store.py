@@ -1,14 +1,25 @@
-"""
-Retrieve top-K documents from pre-built FAISS indexes.
+"""Retrieves top-K documents from pre-built FAISS indexes.
 
-Supports 3 corpus types: original, naive_poisoned, corruptrag_ak_poisoned.
-Uses pre-computed query embeddings when a query_id is provided (fast path),
-or falls back to live Contriever embedding (slow path).
+Supports 3 corpus types: `original`, `naive_poisoned`,
+`corruptrag_ak_poisoned`. Uses pre-computed query embeddings when a
+`query_id` is provided (fast path), or falls back to live Contriever
+embedding (slow path) for ad-hoc questions.
 
-Usage:
-    vs = VectorStore('original')          # loads corpus + index on first call
-    vs2 = VectorStore('original')         # returns cached instance (no reload)
-    results = vs.retrieve("some question", top_k=5)
+Prerequisites:
+    FAISS index, doc-ID pickle, and corpus jsonl for each corpus
+    type in `src/data/vector-store/` and `src/data/`. Built by
+    `src/embeddings/build_vector_indexes.py` and the data scripts.
+
+Notes:
+    `VectorStore` instances are cached by `corpus_type` — repeated
+    `VectorStore('original')` calls return the same in-memory
+    instance (corpus + index loaded once per process). On macOS,
+    `KMP_DUPLICATE_LIB_OK` and a one-thread Torch setting suppress
+    an OpenMP conflict between `faiss-cpu` and PyTorch.
+
+    Example:
+        vs = VectorStore('original')
+        results = vs.retrieve("some question", top_k=5)
 """
 
 import os

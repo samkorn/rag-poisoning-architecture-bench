@@ -1,20 +1,27 @@
-"""
-experiments/experiment.py
-
-Core experiment execution logic for RAG Poisoning Architecture Bench.
+"""Core experiment execution logic for the RAG Poisoning Architecture Bench.
 
 Defines:
-  - ExperimentConfig: immutable specification for one experiment
-  - QuestionResult: result for a single question within an experiment
-  - run_single_question(): atomic unit of work (one question, one architecture)
-  - run_question_batch(): batch processor with per-question checkpointing
-  - split_query_ids(): utility for dividing work across workers
 
-This module is pure Python (no Modal dependency). It is imported by the
-orchestrator's Modal worker function.
+  * `ExperimentConfig` — immutable specification for one experiment.
+  * `QuestionResult` — result for a single question within an
+    experiment.
+  * `run_single_question()` — atomic unit of work (one question, one
+    architecture).
+  * `run_question_batch()` — batch processor with per-question
+    checkpointing.
+  * `split_query_ids()` — utility for dividing work across workers.
 
-Imports use package-qualified paths (``from src.architectures.X import Y``),
-resolved via the editable install (``pip install -e .``).
+This module is pure Python (no Modal dependency). It is imported by
+the orchestrator's Modal worker function.
+
+Notes:
+    Imports use package-qualified paths (`from src.architectures.X
+    import Y`), resolved via the editable install (`pip install -e .`).
+    The function names `run_single_question` and `run_question_batch`
+    are kept on the `question` side of the `query` vs `question`
+    naming convention because renaming them would cascade through
+    Modal log history; their parameters use `query_id` correctly
+    (see CONVENTIONS.md).
 """
 
 import json

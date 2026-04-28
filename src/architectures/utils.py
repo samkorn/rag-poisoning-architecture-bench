@@ -1,3 +1,19 @@
+"""Shared LLM-call helpers used by Vanilla RAG and MADAM-RAG.
+
+Exposes `execute_llm_call` (a tenacity-retried wrapper around the
+OpenAI Responses API supporting structured outputs and reasoning
+controls) and `_LLM_CALL_TIMEOUT_SECONDS`, the per-call HTTP timeout
+shared across architectures.
+
+Notes:
+    Agentic RAG and RLM construct their own OpenAI clients through
+    different paths (PydanticAI for Agentic, the `rlm` package for
+    RLM) but both import `_LLM_CALL_TIMEOUT_SECONDS` so all four
+    architectures use the same per-call ceiling. The OpenAI client's
+    own retries are disabled (`max_retries=0`) so tenacity owns
+    retry/backoff exclusively.
+"""
+
 from typing import Optional, Type, Union
 
 from openai import OpenAI

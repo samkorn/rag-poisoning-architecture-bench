@@ -1,15 +1,30 @@
-"""
-Build 3 FAISS indexes (original, naive-poisoned, corruptrag-ak-poisoned) from
-pre-computed Contriever embeddings.
+"""Builds 3 FAISS indexes (original, naive-poisoned, corruptrag-ak-poisoned) from pre-computed Contriever embeddings.
 
-Indexes are saved to src/data/vector-store/ as:
-  - nq-original.faiss                + nq-original-doc-ids.pkl
-  - nq-naive-poisoned.faiss          + nq-naive-poisoned-doc-ids.pkl
-  - nq-corruptrag-ak-poisoned.faiss  + nq-corruptrag-ak-poisoned-doc-ids.pkl
+Prerequisites:
+    Pre-computed Contriever embedding pickles in
+    `src/data/vector-store/`:
 
-Memory strategy: the ~8GB original embeddings dict is loaded once, stacked +
-normalized into a matrix, then the dict is freed. Poisoned indexes reuse the
-original matrix and vstack the small poisoned vectors on top.
+      * `nq-original-documents-embeddings.pkl`
+      * `nq-naive-poisoned-documents-embeddings.pkl`
+      * `nq-corruptrag-ak-poisoned-documents-embeddings.pkl`
+
+    Built by `src/embeddings/embed_datasets.py`.
+
+Usage:
+    python src/embeddings/build_vector_indexes.py
+
+Output:
+    Six files in `src/data/vector-store/`:
+
+      * `nq-original.faiss` + `nq-original-doc-ids.pkl`
+      * `nq-naive-poisoned.faiss` + `nq-naive-poisoned-doc-ids.pkl`
+      * `nq-corruptrag-ak-poisoned.faiss` + `nq-corruptrag-ak-poisoned-doc-ids.pkl`
+
+Notes:
+    Memory strategy — the ~8GB original embeddings dict is loaded
+    once, stacked and normalized into a matrix, then the dict is
+    freed. Poisoned indexes reuse the original matrix and `vstack`
+    the small poisoned vectors on top, avoiding a second full load.
 """
 
 import os

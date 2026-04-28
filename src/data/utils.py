@@ -1,4 +1,21 @@
-"""Shared data utilities — query lookup, dataset paths, etc."""
+"""Shared data utilities — query lookup, dataset paths, and noise-filter exclusions.
+
+Defines:
+
+  * `get_question_from_query_id` / `get_query_id_from_question` —
+    bidirectional lookup against `original-datasets/nq/queries.jsonl`.
+  * `load_title_to_doc_ids_map` — group corpus passages by Wikipedia
+    article title (used by RLM to assemble full topic context).
+  * `_load_noise_question_ids` — read the NOISE filter results
+    directory and return the set of query IDs to exclude from attack
+    metrics.
+
+Notes:
+    The noise-exclusion loader is invoked lazily (called from the
+    judge / analysis layer), but it inspects two candidate paths
+    (local results dir and the Modal volume mount) and silently
+    returns an empty set if neither exists.
+"""
 
 import os
 import json

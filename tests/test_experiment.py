@@ -1,14 +1,15 @@
-"""Tests for src.experiments.experiment.
+"""Tests for `src.experiments.experiment`.
 
 * :class:`ExperimentHelpersUnitTests` — pure-Python helpers
-  (is_poison_doc_id, detect_*, make_log_tag, split_query_ids). No data.
-* :class:`RetrievalCaptureUnitTests` — RetrievalCapture intercepts the
-  vector store calls. Requires the FAISS index, so it's marked
+  (`is_poison_doc_id`, `detect_*`, `make_log_tag`, `split_query_ids`).
+  No data.
+* :class:`RetrievalCaptureUnitTests` — `RetrievalCapture` intercepts
+  the vector store calls. Requires the FAISS index, so it's marked
   integration even though the test itself is structural.
-* :class:`<Architecture>RunIntegrationTests` — one class per architecture
-  (vanilla clean, vanilla poisoned, agentic, RLM, MADAM) and one for
-  the batch runner. Each makes live OpenAI calls and requires the
-  vector store + question fixtures on disk.
+* :class:`<Architecture>RunIntegrationTests` — one class per
+  architecture (vanilla clean, vanilla poisoned, agentic, RLM,
+  MADAM) and one for the batch runner. Each makes live OpenAI calls
+  and requires the vector store + question fixtures on disk.
 """
 
 import json

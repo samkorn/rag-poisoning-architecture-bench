@@ -1,3 +1,24 @@
+"""Contriever embedder — wraps `facebook/contriever` for batch and single-text embedding.
+
+Defines the `Embedder` class used by `embed_datasets.py` (offline
+corpus and query embedding) and `vector_store.py` (live query
+embedding fallback).
+
+Usage:
+    python src/embeddings/embeddings.py
+
+Output:
+    Sanity-check cosine similarities printed to stdout for two
+    hand-picked sentence pairs. No files written.
+
+Notes:
+    The HF / transformers env vars at the top of this file silence
+    noisy progress bars and must be set before `import transformers`.
+    `_mean_pooling` ignores padded positions when averaging token
+    embeddings — without the mask, padding would bias the pooled
+    vector toward the zero-token region of the embedding space.
+"""
+
 import os
 # quiet HF / transformers (must be done before importing transformers)
 os.environ['TRANSFORMERS_VERBOSITY'] = 'error'

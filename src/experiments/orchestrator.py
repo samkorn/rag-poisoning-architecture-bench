@@ -1,15 +1,16 @@
-"""
-experiments/orchestrator.py
-
-Modal application for the RAG Poisoning Architecture Bench experiments.
+"""Modal application for the RAG Poisoning Architecture Bench experiments.
 
 Defines:
-  - Modal App with image, volume, and secrets
-  - run_worker: processes a batch of questions for one experiment (up to 99 workers)
-  - run_orchestrator: iterates through all 12 experiments sequentially
-  - main: local entrypoint for ``modal run --detach``
 
-Architecture:
+  * Modal App with image, volume, and secrets.
+  * `run_worker` — processes a batch of questions for one experiment
+    (up to 99 workers run in parallel).
+  * `run_orchestrator` — iterates through all 12 experiments
+    sequentially, fanning out workers per experiment.
+  * `main` — local entrypoint for `modal run --detach`.
+
+Topology:
+
     Your laptop
         | (modal run --detach)
     Orchestrator container (#100)   timeout=24h
@@ -20,25 +21,31 @@ Architecture:
         +-- Worker #99  (questions ~1140-1150)
     All writing to shared Modal Volume
 
+Prerequisites:
+    Modal Volume `rag-poisoning-data` populated by
+    `src/experiments/upload_data.py`. Modal credentials and the
+    `openai-rag-poisoning` Modal Secret.
+
 Usage:
-    # 1. Upload pre-computed data to Modal Volume (separate script)
-    modal run experiments/upload_data.py
-
-    # 2. Launch the full experiment run (detaches from terminal)
-    modal run --detach experiments/orchestrator.py
-
-    # 3. Monitor progress
+    modal run src/experiments/upload_data.py
+    modal run --detach src/experiments/orchestrator.py
     modal app logs rag-poisoning-bench
-
-    # 4. Check results
     modal volume ls rag-poisoning-data results/
 
-Volume layout expected (uploaded before experiments):
-    /vol/
-    +-- vector-store/            FAISS indexes, doc-ID pickles, query embeddings
-    +-- original-datasets/nq/    BEIR NQ: queries.jsonl, corpus.jsonl, qrels/
-    +-- experiment-datasets/     Poisoned corpus variants
-    +-- results/                 (output — one subdir per experiment)
+Output:
+    Per-question result JSONs under `/vol/results/<experiment_dir>/`
+    on the Modal Volume. Each `<experiment_dir>` corresponds to one
+    of the 12 (architecture, attack) cells.
+
+Notes:
+    Volume layout expected before experiments run:
+
+      * `/vol/vector-store/` — FAISS indexes, doc-ID pickles, query
+        embeddings.
+      * `/vol/original-datasets/nq/` — BEIR NQ (`queries.jsonl`,
+        `corpus.jsonl`, `qrels/`).
+      * `/vol/experiment-datasets/` — poisoned corpus variants.
+      * `/vol/results/` — output, one subdirectory per experiment.
 """
 
 import json
