@@ -25,6 +25,7 @@ SMOKE_PREFIX = '_smoketest_'
 
 
 def _modal_credentials_or_skip() -> None:
+    """Skip the calling test class when Modal credentials aren't configured."""
     if not os.path.exists(os.path.expanduser('~/.modal.toml')):
         raise unittest.SkipTest(
             "Modal credentials not found at ~/.modal.toml. "
@@ -40,6 +41,7 @@ class OrchestratorSmokeConfigUnitTests(unittest.TestCase):
     """The per-architecture smoke configs match the production matrix shape."""
 
     def test_one_smoke_config_per_architecture(self):
+        """All four smoke configs round-trip and are correctly prefixed."""
         from src.experiments.experiment import ExperimentConfig
 
         configs = []
@@ -92,6 +94,7 @@ def cleanup_smoke_results() -> list[str]:
 
 @app.function(image=image, volumes={VOLUME_MOUNT: volume}, timeout=60)
 def verify_smoke_results(experiment_id: str, expected_ids: list[str]) -> dict:
+    """Read smoke result JSONs and return a verification dict."""
     volume.reload()
     exp_dir = os.path.join(EXPERIMENTS_DIR, experiment_id)
     if not os.path.isdir(exp_dir):
@@ -119,7 +122,17 @@ def verify_smoke_results(experiment_id: str, expected_ids: list[str]) -> dict:
 # ===========================================================================
 
 class _OrchestratorSmokeMixin:
-    """Shared lifecycle: open app.run() context, clean up smoke results."""
+    """Shared lifecycle for the per-architecture orchestrator smoke tests.
+
+    Opens an `app.run()` context at the class level and cleans up
+    `_smoketest_*` directories before and after each test.
+
+    Attributes:
+        architecture: Architecture name set by each subclass
+            (`vanilla`, `agentic`, `madam`, `rlm`).
+        k: Top-K value for the smoke run. `None` for RLM, `10`
+            otherwise.
+    """
 
     architecture: str
     k: int | None
@@ -147,6 +160,7 @@ class _OrchestratorSmokeMixin:
         super().tearDown()
 
     def _run_smoke(self) -> None:
+        """Run the architecture's single-question smoke + verify the result."""
         from src.experiments.experiment import ExperimentConfig
 
         config = ExperimentConfig(
@@ -179,35 +193,43 @@ class _OrchestratorSmokeMixin:
 
 @pytest.mark.modal
 class OrchestratorSmokeVanillaIntegrationTests(_OrchestratorSmokeMixin, unittest.TestCase):
+    """One-question Vanilla RAG smoke run on Modal."""
     architecture = 'vanilla'
     k = 10
 
     def test_single_question_completes(self):
+        """Vanilla one-question smoke completes with no errors on Modal."""
         self._run_smoke()
 
 
 @pytest.mark.modal
 class OrchestratorSmokeAgenticIntegrationTests(_OrchestratorSmokeMixin, unittest.TestCase):
+    """One-question Agentic RAG smoke run on Modal."""
     architecture = 'agentic'
     k = 10
 
     def test_single_question_completes(self):
+        """Agentic one-question smoke completes with no errors on Modal."""
         self._run_smoke()
 
 
 @pytest.mark.modal
 class OrchestratorSmokeMADAMIntegrationTests(_OrchestratorSmokeMixin, unittest.TestCase):
+    """One-question MADAM-RAG smoke run on Modal."""
     architecture = 'madam'
     k = 10
 
     def test_single_question_completes(self):
+        """MADAM-RAG one-question smoke completes with no errors on Modal."""
         self._run_smoke()
 
 
 @pytest.mark.modal
 class OrchestratorSmokeRLMIntegrationTests(_OrchestratorSmokeMixin, unittest.TestCase):
+    """One-question RLM smoke run on Modal."""
     architecture = 'rlm'
     k = None
 
     def test_single_question_completes(self):
+        """RLM one-question smoke completes with no errors on Modal."""
         self._run_smoke()

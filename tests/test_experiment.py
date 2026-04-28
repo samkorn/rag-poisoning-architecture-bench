@@ -66,6 +66,7 @@ class ExperimentHelpersUnitTests(unittest.TestCase):
     """Pure-Python helpers from src.experiments.experiment — no IO."""
 
     def test_is_poison_doc_id_positive(self):
+        """All `poisoned`-prefixed IDs are detected as poison."""
         from src.experiments.experiment import is_poison_doc_id
         for doc_id in (
             'poisoned-naive-q:test0',
@@ -75,11 +76,13 @@ class ExperimentHelpersUnitTests(unittest.TestCase):
             self.assertTrue(is_poison_doc_id(doc_id))
 
     def test_is_poison_doc_id_negative(self):
+        """Original IDs and non-matching prefixes are not flagged as poison."""
         from src.experiments.experiment import is_poison_doc_id
         for doc_id in ('doc0', 'doc12345', '', 'poison-not-quite', 'POISONED-uppercase'):
             self.assertFalse(is_poison_doc_id(doc_id))
 
     def test_detect_poison_in_results_no_poison(self):
+        """No poison in results -> `(False, None)`."""
         from src.experiments.experiment import detect_poison_in_results
         docs = [{'doc_id': f'doc{i}'} for i in range(5)]
         found, rank = detect_poison_in_results(docs)
@@ -87,6 +90,7 @@ class ExperimentHelpersUnitTests(unittest.TestCase):
         self.assertIsNone(rank)
 
     def test_detect_poison_in_results_at_rank_one(self):
+        """Poison at the top of the result list -> `(True, 1)`."""
         from src.experiments.experiment import detect_poison_in_results
         docs = [
             {'doc_id': 'poisoned-naive-q:test0'},
@@ -98,6 +102,7 @@ class ExperimentHelpersUnitTests(unittest.TestCase):
         self.assertEqual(rank, 1)
 
     def test_detect_poison_in_results_at_rank_five(self):
+        """Poison mid-list returns the correct 1-indexed rank."""
         from src.experiments.experiment import detect_poison_in_results
         docs = [{'doc_id': f'doc{i}'} for i in range(4)]
         docs.append({'doc_id': 'poisoned-corruptrag-ak-q:test0'})
@@ -107,24 +112,28 @@ class ExperimentHelpersUnitTests(unittest.TestCase):
         self.assertEqual(rank, 5)
 
     def test_detect_gold_in_results_no_gold(self):
+        """No gold IDs in retrieval -> empty rank list."""
         from src.experiments.experiment import detect_gold_in_results
         docs = [{'doc_id': f'doc{i}'} for i in range(5)]
         ranks = detect_gold_in_results(docs, gold_doc_ids=['doc99', 'doc100'])
         self.assertEqual(ranks, [])
 
     def test_detect_gold_in_results_single(self):
+        """One gold hit returns its 1-indexed rank."""
         from src.experiments.experiment import detect_gold_in_results
         docs = [{'doc_id': f'doc{i}'} for i in range(5)]
         ranks = detect_gold_in_results(docs, gold_doc_ids=['doc2'])
         self.assertEqual(ranks, [3])  # 1-indexed
 
     def test_detect_gold_in_results_multiple(self):
+        """Multiple gold hits return all ranks in retrieval order."""
         from src.experiments.experiment import detect_gold_in_results
         docs = [{'doc_id': f'doc{i}'} for i in range(10)]
         ranks = detect_gold_in_results(docs, gold_doc_ids=['doc0', 'doc5', 'doc9'])
         self.assertEqual(ranks, [1, 6, 10])
 
     def test_make_log_tag_with_k(self):
+        """Tag includes architecture, k, attack, and query."""
         from src.experiments.experiment import ExperimentConfig, make_log_tag
         config = ExperimentConfig(
             experiment_id='vanilla_clean',
@@ -135,6 +144,7 @@ class ExperimentHelpersUnitTests(unittest.TestCase):
         self.assertEqual(make_log_tag(config, 'test0'), '[vanilla k=10 clean test0]')
 
     def test_make_log_tag_rlm_no_k(self):
+        """RLM tag omits the `k=` segment when `config.k` is `None`."""
         from src.experiments.experiment import ExperimentConfig, make_log_tag
         config = ExperimentConfig(
             experiment_id='rlm_clean',
@@ -145,6 +155,7 @@ class ExperimentHelpersUnitTests(unittest.TestCase):
         self.assertEqual(make_log_tag(config, 'test0'), '[rlm clean test0]')
 
     def test_make_log_tag_with_batch_info(self):
+        """Tag appends `q=N/M` when batch position is provided."""
         from src.experiments.experiment import ExperimentConfig, make_log_tag
         config = ExperimentConfig(
             experiment_id='madam_naive',
@@ -156,6 +167,7 @@ class ExperimentHelpersUnitTests(unittest.TestCase):
         self.assertEqual(tag, '[madam k=10 naive test5 q=3/12]')
 
     def test_split_query_ids_round_robin(self):
+        """Round-robin splits 10 IDs across 3 workers in 4/3/3 batches."""
         from src.experiments.experiment import split_query_ids
         ids = [f'test{i}' for i in range(10)]
         batches = split_query_ids(ids, n_workers=3)
@@ -180,6 +192,7 @@ class VanillaCleanIntegrationTests(unittest.TestCase):
         cls.queries = _load_test_queries([TEST_QUERY_ID])
 
     def test_run_single_question(self):
+        """Vanilla clean run produces a result with gold-doc ranks."""
         from src.experiments.experiment import (
             ExperimentConfig, create_qa_system, run_single_question,
         )
@@ -216,6 +229,7 @@ class VanillaNaiveIntegrationTests(unittest.TestCase):
         cls.queries = _load_test_queries([TEST_QUERY_ID])
 
     def test_run_single_question(self):
+        """Vanilla naive-poisoned run sets poison + target fields."""
         from src.experiments.experiment import (
             ExperimentConfig, create_qa_system, run_single_question,
         )
@@ -245,6 +259,7 @@ class RetrievalCaptureIntegrationTests(unittest.TestCase):
         _data_present_or_skip()
 
     def test_vanilla_records_one_retrieve_no_doc_fetches(self):
+        """Vanilla RAG triggers exactly one `retrieve` and no doc fetches."""
         from src.experiments.experiment import (
             ExperimentConfig, RetrievalCapture, create_qa_system,
         )
@@ -275,6 +290,7 @@ class AgenticCleanIntegrationTests(unittest.TestCase):
         cls.queries = _load_test_queries([TEST_QUERY_ID])
 
     def test_run_single_question(self):
+        """Agentic RAG clean run completes and emits an answer."""
         from src.experiments.experiment import (
             ExperimentConfig, create_qa_system, run_single_question,
         )
@@ -304,6 +320,7 @@ class RLMCleanIntegrationTests(unittest.TestCase):
         cls.queries = _load_test_queries([TEST_QUERY_ID])
 
     def test_run_single_question(self):
+        """RLM clean run completes without error and emits an answer."""
         from src.experiments.experiment import (
             ExperimentConfig, create_qa_system, run_single_question,
         )
@@ -330,6 +347,7 @@ class MADAMCleanIntegrationTests(unittest.TestCase):
         cls.queries = _load_test_queries([TEST_QUERY_ID])
 
     def test_run_single_question(self):
+        """MADAM-RAG clean run completes without error and emits an answer."""
         from src.experiments.experiment import (
             ExperimentConfig, create_qa_system, run_single_question,
         )
@@ -368,6 +386,7 @@ class QuestionBatchIntegrationTests(unittest.TestCase):
         super().tearDown()
 
     def test_batch_runs_then_skips_on_rerun(self):
+        """First batch completes 3 queries; second run finds them cached."""
         from src.experiments.experiment import ExperimentConfig, run_question_batch
 
         config = ExperimentConfig(
