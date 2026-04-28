@@ -21,8 +21,9 @@ Output:
     line.
 
 Notes:
-    Uses a raw `openai` client rather than `src.architectures.utils.execute_llm_call`
-    to keep the Modal image minimal — the util module pulls in
+    Uses a raw `openai` client rather than
+    `src.architectures.utils.execute_llm_call` to keep the Modal
+    image minimal — the util module pulls in
     pydantic/tenacity/qa_system, which aren't needed here.
 """
 
@@ -67,6 +68,23 @@ Respond with ONLY a JSON object in this exact format, no other text:
 
 @app.function(secrets=[modal.Secret.from_name('openai-rag-poisoning')])
 def craft_incorrect_answer(question_text: str, correct_answer: str, passages: str) -> dict[str, str]:
+    """Generate one (incorrect-answer, supporting-passage) pair.
+
+    Sends the few-shot prompt at `temperature=0` and parses the
+    JSON-object response. The poisoned passage matches the tone
+    and detail level of the gold passages and includes fabricated
+    contextual specifics to look credible.
+
+    Args:
+        question_text: Natural-language question.
+        correct_answer: The true answer; used to keep the
+            adversarial answer the same format/type.
+        passages: Newline-joined gold passages, included in the
+            prompt as style reference.
+
+    Returns:
+        Dict with keys `incorrect_answer` and `poisoned_doc`.
+    """
     # Raw openai client (not src.architectures.utils.execute_llm_call): keeps the
     # Modal image minimal — the util pulls in pydantic/tenacity/qa_system and is
     # shaped for the experiment loop (Responses API, structured output, reasoning).
@@ -84,6 +102,15 @@ def craft_incorrect_answer(question_text: str, correct_answer: str, passages: st
 
 @app.local_entrypoint()
 def main():
+    """Generate naive-injection passages for every NQ test query.
+
+    Loads queries, the corpus, qrels, and correct answers; pairs
+    each query with its gold passages and known correct answer;
+    fans `craft_incorrect_answer.starmap` out across Modal workers;
+    writes the resulting `(query_id, incorrect_answer,
+    poisoned_doc)` records to
+    `experiment-datasets/nq-incorrect-answers-poisoned-docs.jsonl`.
+    """
     # Parse original dataset
     print("Parsing NQ dataset...")
     queries: dict[str, str] = {}

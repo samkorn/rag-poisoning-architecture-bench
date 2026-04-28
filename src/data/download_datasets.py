@@ -1,7 +1,7 @@
-"""Downloads BEIR datasets (NQ, MS MARCO, HotpotQA) into `src/data/original-datasets/`.
+"""Download BEIR datasets (NQ, MS MARCO, HotpotQA) to `original-datasets/`.
 
-Skips any dataset whose target directory already exists, so re-running
-is a no-op once the data is on disk.
+Skips any dataset whose target directory already exists, so
+re-running is a no-op once the data is on disk.
 
 Usage:
     python src/data/download_datasets.py
