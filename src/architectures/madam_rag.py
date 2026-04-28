@@ -28,6 +28,21 @@ from src.embeddings.vector_store import VectorStore
 # ------------------------------------------------------------------
 
 def _normalize_answer(s: str) -> str:
+    """Apply SQuAD-style normalization for the consensus check.
+
+    Lowercases, strips punctuation, removes leading articles
+    (`a`, `an`, `the`), and collapses whitespace. The MADAM-RAG
+    paper inherits this normalization from the SQuAD evaluation
+    script — without it, "the Apollo 11" and "Apollo 11." would be
+    treated as different answers and consensus would never trigger
+    early stop.
+
+    Args:
+        s: Raw answer string emitted by an agent.
+
+    Returns:
+        Normalized comparable form.
+    """
     def _remove_articles(text):
         return re.sub(r'\b(a|an|the)\b', ' ', text)
     def _white_space_fix(text):
@@ -40,6 +55,23 @@ def _normalize_answer(s: str) -> str:
 
 
 def _agent_response(query: str, document: str, model_id: str, history: str = '') -> str:
+    """Generate one agent's answer for a single document, optionally seeded with peer history.
+
+    Used in every debate round. The prompt branches on whether
+    `history` is supplied: round 1 sees only the assigned document;
+    later rounds see peer responses appended.
+
+    Args:
+        query: Natural-language question.
+        document: The single passage this agent is reading.
+        model_id: OpenAI model to call.
+        history: Concatenated peer responses from the previous
+            round, or empty string for round 1.
+
+    Returns:
+        The agent's response text in the contractual
+        `'Answer: {x}. Explanation: {y}'` format.
+    """
     if history:
         prompt = f"""
         You are an agent reading a document to answer a question.
@@ -66,6 +98,23 @@ def _agent_response(query: str, document: str, model_id: str, history: str = '')
 
 
 def _aggregate_responses(query: str, responses: List[str], model_id: str) -> str:
+    """Run the aggregator LLM call that emits the round's final answer.
+
+    Builds a few-shot prompt (one in-context example covering
+    multi-correct-answer disambiguation), then asks the model to
+    return all plausible correct answers and a step-by-step
+    rationale.
+
+    Args:
+        query: The question being debated.
+        responses: One response per agent, in agent order.
+        model_id: OpenAI model to call.
+
+    Returns:
+        The aggregator's text in the contractual
+        `'All Correct Answers: [...]. Explanation: {x}'` format,
+        or `'unknown'` when no answer is plausible.
+    """
     joined = '\n'.join([f"Agent {i+1}: {r}" for i, r in enumerate(responses)])
     prompt = f"""
     You are an aggregator reading answers from multiple agents.
@@ -99,6 +148,33 @@ def _multi_agent_debate(
     num_rounds: int = 3,
     log_tag: str = '',
 ) -> dict:
+    """Run the full MADAM-RAG debate loop and return the round-by-round transcript.
+
+    Round 1 has each agent answer independently. Each subsequent
+    round shows every agent its peers' previous-round responses and
+    re-asks for an answer. After each round the per-agent answers
+    are SQuAD-normalized and compared against the previous round;
+    if every agent's answer is contained in (or contains) its prior
+    round's answer, the debate is declared converged and stops
+    early.
+
+    Args:
+        query: Natural-language question.
+        documents: Retrieved passages, one per agent (so the agent
+            count equals `len(documents)`).
+        model_id: OpenAI model used by every agent and the
+            aggregator.
+        num_rounds: Hard cap on debate rounds. Defaults to 3.
+        log_tag: Prefix prepended to per-round log lines so
+            concurrent debates are distinguishable.
+
+    Returns:
+        A dict keyed by `round1`, `round2`, ..., plus
+        `final_aggregation`. Each round entry has `answers`,
+        `explanations`, and (when not skipped by early-stop) an
+        `aggregation` field. `final_aggregation` is the aggregator
+        output from whichever round stopped the loop.
+    """
     records = {}
     num_agents = len(documents)
     agent_outputs = []
@@ -170,8 +246,26 @@ def _multi_agent_debate(
 # ------------------------------------------------------------------
 
 class MadamRAG(QASystem):
+    """Multi-agent debate RAG (Wang et al., COLM 2025).
+
+    Retrieves `top_k` passages, spawns one agent per passage,
+    iterates the debate loop in `_multi_agent_debate` for up to
+    `num_rounds`, and returns the aggregator's final answer.
+    """
 
     def __init__(self, corpus_type: str, top_k: int = 5, num_rounds: int = 3, **kwargs):
+        """Initialize a MADAM-RAG instance and load its `VectorStore`.
+
+        Args:
+            corpus_type: Which corpus to retrieve from
+                (`original`, `naive_poisoned`, `corruptrag_ak_poisoned`).
+            top_k: Number of passages to retrieve. Each passage
+                gets its own debating agent. Defaults to 5; the
+                bench runs at `top_k=10`.
+            num_rounds: Hard cap on debate rounds. Defaults to 3.
+            **kwargs: Forwarded to `QASystem.__init__` (model,
+                reasoning controls, etc.).
+        """
         super().__init__(
             architecture='madam_rag',
             corpus_type=corpus_type,
@@ -182,6 +276,20 @@ class MadamRAG(QASystem):
         self.vector_store = VectorStore(self.corpus_type)
 
     def _run(self, question: str, query_id: Optional[str]) -> str:
+        """Retrieve passages, run the debate, and stash the round-by-round transcript.
+
+        The full transcript is stored on `self._last_debate_records`
+        so callers (e.g. the experiment loop) can persist it to
+        disk for later inspection.
+
+        Args:
+            question: Natural-language question.
+            query_id: NQ test query ID, or `None` for ad-hoc
+                questions. Forwarded to `VectorStore.retrieve`.
+
+        Returns:
+            The aggregator's final answer.
+        """
         retrieved_document_results = self.vector_store.retrieve(
             question=question,
             top_k=self.top_k,

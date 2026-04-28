@@ -96,8 +96,7 @@ Notes:
   flags: `` `VectorStore` ``, `` `nq-questions.jsonl` ``,
   `` `src/data/utils.py` ``, `` `--dry-run` ``. Never RST-style double
   backticks.
-* **Bullets use `*`** with 2-space indent under sections (matches the
-  Sphinx-flavored style we'll standardize on for function docstrings).
+* **Bullets use `*`** with 2-space indent under sections.
 * **`Usage:` block**: 4-space indented, bare command (no leading `$` /
   `>` / `::`). One command per line. `Usage:` (single colon), not
   `Usage::`.
@@ -116,3 +115,117 @@ Notes:
   long prose paragraph.
 * **Exception for test files**: tests use Sphinx cross-refs like
   `:class:` already and the bullet character there is `*` — same rule.
+
+## Function and class docstrings
+
+Function, method, and class docstrings use **Google style** (renderable
+via Sphinx Napoleon if we ever publish HTML). Type information lives
+exclusively in type hints — never in the docstring.
+
+### Mood
+
+* **Function and method docstrings use imperative mood** ("Return the
+  result", "Build the index") per PEP 257 and Google style.
+* **Module docstrings use descriptive mood** (see above).
+
+The split is intentional: imperative reads better at function level
+(verb-led command), while modules are more naturally described as a
+thing.
+
+### Function / method shape
+
+```
+def foo(name: str, retries: int = 3) -> Result:
+    """Imperative one-line summary, ending in a period.
+
+    Optional longer paragraph elaborating on behavior, edge cases,
+    or anything a caller would want to know that isn't obvious from
+    the signature.
+
+    Args:
+        name: Description of the param.
+        retries: Description of the param. Default behavior or
+            constraints can wrap onto subsequent lines indented an
+            additional 4 spaces.
+
+    Returns:
+        Description of what comes back. For dicts/tuples with named
+        fields, a sub-block listing them is encouraged.
+
+    Raises:
+        ValueError: When and why.
+        TimeoutError: When and why.
+
+    Notes:
+        Anything a reader might naturally have questions about —
+        design quirks, why this function doesn't reuse a related
+        helper, on-disk schema constraints, etc.
+    """
+```
+
+### Class shape
+
+```
+class Foo:
+    """Imperative-flavored summary of what the class does.
+
+    Optional longer paragraph.
+
+    Attributes:
+        bar: Class-level constant or computed attribute.
+        baz: Another class-level attribute.
+    """
+
+    def __init__(self, name: str, retries: int = 3):
+        """Initialize Foo.
+
+        Args:
+            name: Description.
+            retries: Description.
+        """
+```
+
+For **dataclasses, NamedTuples, and frozen objects** (no custom
+`__init__`): document fields in the class docstring's `Attributes:`
+block.
+
+### Rules
+
+* **No types in docstrings** — type hints are the source of truth.
+  Sphinx Napoleon picks them up automatically when rendering, and IDE
+  hovers already show the signature alongside the docstring.
+* **One docstring site per attribute.**
+  * Dataclasses / NamedTuples → `Attributes:` block in the class
+    docstring.
+  * Regular classes with custom `__init__` → params documented in
+    `__init__`; the class docstring covers what the class *is*, plus
+    class-level constants or computed properties not passed to
+    `__init__`. Avoid duplicating `__init__` params in the class
+    docstring.
+* **Coverage:**
+  * All public functions, methods, and classes get a docstring.
+  * All `__init__` with non-trivial params get a docstring.
+  * Private helpers (`_foo`) — only when the *why* isn't obvious from
+    name + signature.
+  * Trivial getters / `@property` returning a stored attribute with
+    no side effect — skip.
+* **One-line docstrings allowed** when the summary captures everything
+  and there are no params/returns worth documenting separately. The
+  closing `"""` goes on the same line.
+* **Test methods** get a single-line summary describing what's being
+  tested. No `Args:` block (only `self`). pytest renders them with
+  `--verbose`.
+* **`@property`**: docstring on the getter, not as a class-attribute
+  listing entry.
+* **Code references**: single backticks `` `VectorStore` `` (matches
+  module-docstring rule).
+* **`Notes:` / `Examples:` blocks** — same shape as in module
+  docstrings, indented as a free-form block at the end. `Examples:`
+  (plural) is the Google-style convention.
+* **No Sphinx cross-references** (`:func:`, `:class:`, `:mod:`) —
+  inline backticks only. Cross-refs add visual noise on GitHub and
+  we're not publishing Sphinx HTML.
+* **Skip log**: every site where we deliberately omit a docstring
+  (per the coverage rules above) is recorded in
+  `.claude/plans/PHASE_7C_DOCSTRING_SKIPS.md` so the omissions are
+  reviewable rather than implicit.

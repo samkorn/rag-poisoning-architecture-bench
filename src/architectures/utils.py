@@ -47,6 +47,46 @@ def execute_llm_call(
     response_format: Optional[Type[BaseModel]] = None,
     truncation: Optional[str] = None,
 ) -> Union[str, BaseModel]:
+    """Call the OpenAI Responses API with shared timeout, retry, and reasoning controls.
+
+    Builds a fresh `OpenAI` client per call (max_retries=0 so tenacity
+    owns all retries) and routes the request through either
+    `responses.create` or `responses.parse` depending on whether a
+    `response_format` was supplied.
+
+    Args:
+        model_id: OpenAI model identifier.
+        reasoning_effort: Optional reasoning-effort level
+            (`low`, `medium`, `high`). Passed through to the
+            `reasoning.effort` field on the request.
+        reasoning_summary: Optional reasoning-summary level passed
+            through to the `reasoning.summary` field.
+        system_prompt: System-level instructions. Defaults to the
+            shared `STANDARD_PROMPT`.
+        user_prompt: User message body.
+        temperature: Sampling temperature. Defaults to 1.0.
+        response_format: Optional Pydantic model. When provided,
+            `responses.parse` is used and the parsed model instance
+            is returned; otherwise `responses.create` is used and
+            the raw output text is returned.
+        truncation: Optional truncation strategy passed through to
+            the API (`auto`, `disabled`).
+
+    Returns:
+        The raw output text (`str`) when no `response_format` is
+        provided, or a parsed instance of `response_format` when one
+        is.
+
+    Raises:
+        ValueError: When `response_format` is provided and the
+            model refuses to emit structured output.
+
+    Notes:
+        Wrapped by `tenacity` for exponential-jitter backoff (3
+        attempts max). The retry wrapper re-raises the underlying
+        exception once attempts are exhausted, so callers see the
+        same exception type they would without retries.
+    """
     # max_retries=0: let tenacity own retries (avoid SDK retries stacking
     # underneath the @retry wrapper).
     openai_client = OpenAI(timeout=_LLM_CALL_TIMEOUT_SECONDS, max_retries=0)
