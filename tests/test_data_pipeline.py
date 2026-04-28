@@ -62,9 +62,9 @@ class DataPipelineInvariantUnitTests(unittest.TestCase):
 
         # Mirror the construction in create_poisoned_datasets.main():
         #   f'poisoned-naive-q:{query_id}' / f'poisoned-corruptrag-ak-q:{query_id}'
-        for qid in ('test0', 'test1234'):
+        for query_id in ('test0', 'test1234'):
             for prefix in ('poisoned-naive-q', 'poisoned-corruptrag-ak-q'):
-                doc_id = f'{prefix}:{qid}'
+                doc_id = f'{prefix}:{query_id}'
                 self.assertTrue(
                     is_poison_doc_id(doc_id),
                     f"is_poison_doc_id({doc_id!r}) should return True",

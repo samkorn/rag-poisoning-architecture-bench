@@ -72,24 +72,26 @@ _EXPERIMENTS_DIR = os.path.dirname(os.path.abspath(__file__))
     max_containers=99,
 )
 def classify_noise(
-    question_dict: dict,
+    query: dict,
     model: str,
     reasoning_effort: str,
     web_search: bool = True,
 ) -> dict:
-    """Classify a single question as NOISE or not. One unit of starmap work."""
+    """Classify a single query as NOISE or not. One unit of starmap work."""
     import sys
     if '/app' not in sys.path:
         sys.path.insert(0, '/app')
 
     from src.experiments.noise_filter import check_noise
 
-    qid = question_dict['query_id']
+    query_id = query['query_id']
+    # 'question_id' key matches the on-disk schema for noise JSONs (kept for
+    # backwards compatibility with persisted results); value is a query_id.
     result = {
-        'question_id': qid,
-        'question': question_dict['question'],
-        'correct_answer': question_dict['correct_answer'],
-        'target_answer': question_dict['target_answer'],
+        'question_id': query_id,
+        'question': query['question'],
+        'correct_answer': query['correct_answer'],
+        'target_answer': query['target_answer'],
         'model': model,
         'reasoning_effort': reasoning_effort,
         'web_search': web_search,
@@ -107,9 +109,9 @@ def classify_noise(
     try:
         t0 = time.monotonic()
         noise_result, usage = check_noise(
-            question=question_dict['question'],
-            correct_answer=question_dict['correct_answer'],
-            target_answer=question_dict['target_answer'],
+            question=query['question'],
+            correct_answer=query['correct_answer'],
+            target_answer=query['target_answer'],
             model=model,
             reasoning_effort=reasoning_effort,
             web_search=web_search,
@@ -130,7 +132,7 @@ def classify_noise(
 
     # Write to volume.
     os.makedirs(NOISE_RESULTS_DIR, exist_ok=True)
-    result_path = os.path.join(NOISE_RESULTS_DIR, f'{qid}.json')
+    result_path = os.path.join(NOISE_RESULTS_DIR, f'{query_id}.json')
     with open(result_path, 'w') as f:
         json.dump(result, f, indent=2)
     volume.commit()
@@ -149,19 +151,19 @@ def classify_noise(
     timeout=60 * 60,  # 1 hour
 )
 def run_noise_orchestrator(model: str, reasoning_effort: str, web_search: bool = True, dry_run: bool = False):
-    """Load questions from volume, skip already-classified, dispatch workers."""
+    """Load queries from volume, skip already-classified, dispatch workers."""
     volume.reload()
 
-    # Load gold-filtered questions from volume.
-    questions_path = os.path.join(
+    # Load gold-filtered queries from volume.
+    queries_path = os.path.join(
         VOLUME_MOUNT, 'experiment-datasets', 'nq-questions-gold-filtered.jsonl'
     )
-    questions = []
-    with open(questions_path) as f:
+    queries = []
+    with open(queries_path) as f:
         for line in f:
-            questions.append(json.loads(line))
+            queries.append(json.loads(line))
 
-    print(f"Total questions: {len(questions)}")
+    print(f"Total queries: {len(queries)}")
 
     # Check which are already done.
     already_done = set()
@@ -178,23 +180,23 @@ def run_noise_orchestrator(model: str, reasoning_effort: str, web_search: bool =
             except (json.JSONDecodeError, OSError, KeyError):
                 pass
 
-    to_classify = [q for q in questions if q['query_id'] not in already_done]
+    to_classify = [query for query in queries if query['query_id'] not in already_done]
     print(f"Already done: {len(already_done)}")
     print(f"To classify:  {len(to_classify)}")
 
     if dry_run:
         print("\n--- DRY RUN ---")
-        print(f"Would classify {len(to_classify)} questions with {model}")
+        print(f"Would classify {len(to_classify)} queries with {model}")
         return
 
     if not to_classify:
-        print("All questions already classified.")
+        print("All queries already classified.")
         return
 
     # Dispatch via starmap.
-    print(f"\nDispatching {len(to_classify)} questions to up to 99 containers...")
+    print(f"\nDispatching {len(to_classify)} queries to up to 99 containers...")
 
-    worker_args = [(q, model, reasoning_effort, web_search) for q in to_classify]
+    worker_args = [(query, model, reasoning_effort, web_search) for query in to_classify]
 
     completed = 0
     errors = 0
@@ -233,7 +235,7 @@ def run_noise_orchestrator(model: str, reasoning_effort: str, web_search: bool =
             'errors': errors,
             'noise_found': noise_count,
             'previously_done': len(already_done),
-            'total_questions': len(questions),
+            'total_questions': len(queries),
             'model': model,
             'reasoning_effort': reasoning_effort,
             'web_search': web_search,

@@ -1,5 +1,5 @@
 """
-Filter nq-questions.jsonl to questions where at least one gold-standard
+Filter nq-questions.jsonl to queries where at least one gold-standard
 document appears in top-10 clean retrieval.
 
 Uses the same on-disk artifacts as ``src.embeddings.vector_store`` (query
@@ -11,14 +11,14 @@ Why this script does not call ``VectorStore``:
 - **Batch FAISS**: ``VectorStore.retrieve`` runs ``index.search`` on one query
   at a time. Here we stack all query vectors and call ``search`` once (or in
   few large blocks if you later chunk for memory). For thousands of
-  questions that is orders of magnitude faster than per-query retrieval.
+  queries that is orders of magnitude faster than per-query retrieval.
 - **No corpus or embedder**: We only need neighbor *indices* mapped to doc
   IDs, then a set intersection with ``gold_doc_ids``. We never return passage
   text. ``VectorStore`` loads the full corpus into memory and constructs an
   ``Embedder`` (Torch) even when using precomputed query embeddings; that is
   wasted work and RAM for this offline filter.
 
-Flow: load questions and embeddings → L2-normalize query matrix (same as
+Flow: load queries and embeddings → L2-normalize query matrix (same as
 ``VectorStore.retrieve``) → batch ``search`` → keep rows where top-K doc IDs
 hit ``gold_doc_ids``.
 
@@ -46,7 +46,11 @@ os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 
 _DATA_DIR = os.path.dirname(os.path.abspath(__file__))
 VECTOR_STORE_DIR = os.path.join(_DATA_DIR, 'vector-store')
-QUESTIONS_PATH = os.path.join(_DATA_DIR, 'experiment-datasets', 'nq-questions.jsonl')
+# Filenames keep the legacy "nq-questions" prefix (the value is a list of
+# query records — id + question text + answers + gold_doc_ids — but the
+# files are referenced from analysis notebooks, paper tables, and
+# upstream BEIR conventions, so the on-disk names are frozen).
+QUERIES_PATH = os.path.join(_DATA_DIR, 'experiment-datasets', 'nq-questions.jsonl')
 OUTPUT_PATH = os.path.join(_DATA_DIR, 'experiment-datasets', 'nq-questions-gold-filtered.jsonl')
 
 TOP_K = 10
@@ -55,12 +59,12 @@ TOP_K = 10
 def main():
     t_start = time.time()
 
-    # --- Load questions ------------------------------------------------------
-    questions: list[dict] = []
-    with open(QUESTIONS_PATH) as f:
+    # --- Load queries --------------------------------------------------------
+    queries: list[dict] = []
+    with open(QUERIES_PATH) as f:
         for line in f:
-            questions.append(json.loads(line))
-    print(f"Loaded {len(questions):,} questions")
+            queries.append(json.loads(line))
+    print(f"Loaded {len(queries):,} queries")
 
     # --- Load query embeddings -----------------------------------------------
     emb_path = os.path.join(VECTOR_STORE_DIR, 'nq-queries-embeddings.pkl')
@@ -80,15 +84,15 @@ def main():
 
     # --- Batch retrieval -----------------------------------------------------
     # One matrix × one search call: FAISS scores each row independently; this
-    # is equivalent to calling retrieve(..., query_id=...) per question but
+    # is equivalent to calling retrieve(..., query_id=...) per query but
     # avoids Python/FAISS round-trip overhead and matches our design goals
     # (see module docstring).
     vecs: list[np.ndarray] = []
     valid_indices: list[int] = []
-    for i, q in enumerate(questions):
-        qid = q['query_id']
-        if qid in query_embeddings:
-            vecs.append(query_embeddings[qid])
+    for i, query in enumerate(queries):
+        query_id = query['query_id']
+        if query_id in query_embeddings:
+            vecs.append(query_embeddings[query_id])
             valid_indices.append(i)
 
     q_matrix = np.array(vecs, dtype=np.float32)
@@ -104,24 +108,24 @@ def main():
     # --- Filter: gold doc in top-K -------------------------------------------
     filtered: list[dict] = []
     for search_idx, q_idx in enumerate(valid_indices):
-        q = questions[q_idx]
-        gold_doc_ids = set(q.get('gold_doc_ids', []))
+        query = queries[q_idx]
+        gold_doc_ids = set(query.get('gold_doc_ids', []))
         if not gold_doc_ids:
             continue
 
         # Map FAISS indices to doc IDs for this query's top-K results
         retrieved_doc_ids = [doc_ids[fi] for fi in faiss_indices[search_idx] if fi >= 0]
         if gold_doc_ids.intersection(retrieved_doc_ids):
-            filtered.append(q)
+            filtered.append(query)
 
     # --- Write output --------------------------------------------------------
     with open(OUTPUT_PATH, 'w') as f:
-        for q in filtered:
-            f.write(json.dumps(q, ensure_ascii=False) + '\n')
+        for query in filtered:
+            f.write(json.dumps(query, ensure_ascii=False) + '\n')
 
     elapsed = time.time() - t_start
-    pct = len(filtered) / len(questions) * 100
-    print(f"\nFiltered: {len(filtered):,} / {len(questions):,} questions ({pct:.1f}%)")
+    pct = len(filtered) / len(queries) * 100
+    print(f"\nFiltered: {len(filtered):,} / {len(queries):,} queries ({pct:.1f}%)")
     print(f"Output:   {OUTPUT_PATH}")
     print(f"Time:     {elapsed:.1f}s")
 

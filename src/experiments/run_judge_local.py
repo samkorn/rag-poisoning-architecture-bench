@@ -147,11 +147,11 @@ def run_validation(
             continue
 
         experiment_id = row['experiment_id']
-        question_id = row['question_id']
+        query_id = row['question_id']
 
         exp_dir = os.path.join(output_dir, experiment_id)
         os.makedirs(exp_dir, exist_ok=True)
-        judge_path = os.path.join(exp_dir, f'{question_id}.json')
+        judge_path = os.path.join(exp_dir, f'{query_id}.json')
 
         target_answer = row.get('target_answer')
 
@@ -162,7 +162,7 @@ def run_validation(
             target_answer=target_answer,
             system_answer=row['system_answer'],
             experiment_id=experiment_id,
-            question_id=question_id,
+            query_id=query_id,
             system_message=system_message,
             user_message_template=user_message_template,
             model=model,
@@ -474,12 +474,12 @@ def build_agreement_report(judge_results: list[dict], review_data: list[dict]) -
         key = (row['experiment_id'], row['question_id'])
         label_by_key[key] = row.get('human_label', '')
 
-    # Build per-architecture set of question_ids answered correctly on clean.
+    # Build per-architecture set of query_ids answered correctly on clean.
     clean_correct: dict[str, set[str]] = {}
     for arch in ARCHS:
         clean_exp = f'{arch}_clean'
         clean_correct[arch] = {
-            qid for (exp_id, qid), label in label_by_key.items()
+            query_id for (exp_id, query_id), label in label_by_key.items()
             if exp_id == clean_exp and label in CORRECT_CATS
         }
 
@@ -504,7 +504,7 @@ def build_agreement_report(judge_results: list[dict], review_data: list[dict]) -
 
                 # Raw counts (all questions).
                 raw_labels = [
-                    label for (eid, qid), label in label_by_key.items()
+                    label for (eid, query_id), label in label_by_key.items()
                     if eid == exp_id and label in valid_categories
                 ]
                 raw_n = len(raw_labels)
@@ -513,9 +513,9 @@ def build_agreement_report(judge_results: list[dict], review_data: list[dict]) -
 
                 # Conditioned counts (only clean-correct questions).
                 cond_labels = [
-                    label for (eid, qid), label in label_by_key.items()
+                    label for (eid, query_id), label in label_by_key.items()
                     if eid == exp_id and label in valid_categories
-                    and qid in clean_correct[arch]
+                    and query_id in clean_correct[arch]
                 ]
                 cond_n = len(cond_labels)
                 cond_ci = sum(1 for l in cond_labels if l == 'CONFIDENT_INCORRECT')
@@ -531,9 +531,9 @@ def build_agreement_report(judge_results: list[dict], review_data: list[dict]) -
         for attack in ATTACKS:
             exp_id = f'madam_{attack}'
             cond_labels = [
-                label for (eid, qid), label in label_by_key.items()
+                label for (eid, query_id), label in label_by_key.items()
                 if eid == exp_id and label in valid_categories
-                and qid in clean_correct['madam']
+                and query_id in clean_correct['madam']
             ]
             cond_n = len(cond_labels)
             if not cond_n:
@@ -624,9 +624,9 @@ def main():
 
     print(f"Loading review data from {args.review_csv}")
     review_data = load_review_data(args.review_csv)
-    n_questions = len(set(r['question_id'] for r in review_data))
+    n_queries = len(set(r['question_id'] for r in review_data))
     n_experiments = len(set(r['experiment_id'] for r in review_data))
-    print(f"Loaded {len(review_data)} rows ({n_questions} questions x {n_experiments} experiments)")
+    print(f"Loaded {len(review_data)} rows ({n_queries} queries x {n_experiments} experiments)")
 
     if args.report_only:
         output_dir = args.output_dir

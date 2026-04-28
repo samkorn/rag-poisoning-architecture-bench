@@ -1,7 +1,7 @@
 """Tests for src.experiments.experiment.
 
 * :class:`ExperimentHelpersUnitTests` — pure-Python helpers
-  (is_poison_doc_id, detect_*, make_log_tag, split_questions). No data.
+  (is_poison_doc_id, detect_*, make_log_tag, split_query_ids). No data.
 * :class:`RetrievalCaptureUnitTests` — RetrievalCapture intercepts the
   vector store calls. Requires the FAISS index, so it's marked
   integration even though the test itself is structural.
@@ -44,17 +44,17 @@ def _data_present_or_skip() -> str:
     return questions_path
 
 
-def _load_test_questions(query_ids: list[str]) -> dict[str, dict]:
-    """Load question dicts from data/experiment-datasets/nq-questions.jsonl."""
+def _load_test_queries(query_ids: list[str]) -> dict[str, dict]:
+    """Load query records from data/experiment-datasets/nq-questions.jsonl."""
     questions_path = _data_present_or_skip()
     query_id_set = set(query_ids)
-    questions: dict[str, dict] = {}
+    queries: dict[str, dict] = {}
     with open(questions_path) as f:
         for line in f:
             line_dict = json.loads(line)
             if line_dict['query_id'] in query_id_set:
-                questions[line_dict['query_id']] = line_dict
-    return questions
+                queries[line_dict['query_id']] = line_dict
+    return queries
 
 
 # ===========================================================================
@@ -154,15 +154,15 @@ class ExperimentHelpersUnitTests(unittest.TestCase):
         tag = make_log_tag(config, 'test5', question_num=3, batch_size=12)
         self.assertEqual(tag, '[madam k=10 naive test5 q=3/12]')
 
-    def test_split_questions_round_robin(self):
-        from src.experiments.experiment import split_questions
+    def test_split_query_ids_round_robin(self):
+        from src.experiments.experiment import split_query_ids
         ids = [f'test{i}' for i in range(10)]
-        batches = split_questions(ids, n_workers=3)
+        batches = split_query_ids(ids, n_workers=3)
         self.assertEqual(len(batches), 3)
         self.assertEqual(batches[0], ['test0', 'test3', 'test6', 'test9'])
         self.assertEqual(batches[1], ['test1', 'test4', 'test7'])
         self.assertEqual(batches[2], ['test2', 'test5', 'test8'])
-        self.assertEqual(sorted(qid for b in batches for qid in b), sorted(ids))
+        self.assertEqual(sorted(query_id for b in batches for query_id in b), sorted(ids))
 
 
 # ===========================================================================
@@ -176,7 +176,7 @@ class VanillaCleanIntegrationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.questions = _load_test_questions([TEST_QUERY_ID])
+        cls.queries = _load_test_queries([TEST_QUERY_ID])
 
     def test_run_single_question(self):
         from src.experiments.experiment import (
@@ -189,7 +189,7 @@ class VanillaCleanIntegrationTests(unittest.TestCase):
             k=10,
         )
         qa_system = create_qa_system(config)
-        result = run_single_question(config, self.questions[TEST_QUERY_ID], qa_system)
+        result = run_single_question(config, self.queries[TEST_QUERY_ID], qa_system)
 
         self.assertIsNone(result.error)
         self.assertTrue(result.system_answer)
@@ -212,7 +212,7 @@ class VanillaNaiveIntegrationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.questions = _load_test_questions([TEST_QUERY_ID])
+        cls.queries = _load_test_queries([TEST_QUERY_ID])
 
     def test_run_single_question(self):
         from src.experiments.experiment import (
@@ -225,7 +225,7 @@ class VanillaNaiveIntegrationTests(unittest.TestCase):
             k=10,
         )
         qa_system = create_qa_system(config)
-        result = run_single_question(config, self.questions[TEST_QUERY_ID], qa_system)
+        result = run_single_question(config, self.queries[TEST_QUERY_ID], qa_system)
 
         self.assertIsNone(result.error)
         self.assertTrue(result.system_answer)
@@ -271,7 +271,7 @@ class AgenticCleanIntegrationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.questions = _load_test_questions([TEST_QUERY_ID])
+        cls.queries = _load_test_queries([TEST_QUERY_ID])
 
     def test_run_single_question(self):
         from src.experiments.experiment import (
@@ -284,7 +284,7 @@ class AgenticCleanIntegrationTests(unittest.TestCase):
             k=10,
         )
         qa_system = create_qa_system(config)
-        result = run_single_question(config, self.questions[TEST_QUERY_ID], qa_system)
+        result = run_single_question(config, self.queries[TEST_QUERY_ID], qa_system)
 
         self.assertIsNone(result.error)
         self.assertTrue(result.system_answer)
@@ -300,7 +300,7 @@ class RLMCleanIntegrationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.questions = _load_test_questions([TEST_QUERY_ID])
+        cls.queries = _load_test_queries([TEST_QUERY_ID])
 
     def test_run_single_question(self):
         from src.experiments.experiment import (
@@ -313,7 +313,7 @@ class RLMCleanIntegrationTests(unittest.TestCase):
             k=None,
         )
         qa_system = create_qa_system(config)
-        result = run_single_question(config, self.questions[TEST_QUERY_ID], qa_system)
+        result = run_single_question(config, self.queries[TEST_QUERY_ID], qa_system)
 
         self.assertIsNone(result.error)
         self.assertTrue(result.system_answer)
@@ -326,7 +326,7 @@ class MADAMCleanIntegrationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.questions = _load_test_questions([TEST_QUERY_ID])
+        cls.queries = _load_test_queries([TEST_QUERY_ID])
 
     def test_run_single_question(self):
         from src.experiments.experiment import (
@@ -339,7 +339,7 @@ class MADAMCleanIntegrationTests(unittest.TestCase):
             k=10,
         )
         qa_system = create_qa_system(config)
-        result = run_single_question(config, self.questions[TEST_QUERY_ID], qa_system)
+        result = run_single_question(config, self.queries[TEST_QUERY_ID], qa_system)
 
         self.assertIsNone(result.error)
         self.assertTrue(result.system_answer)
@@ -356,7 +356,7 @@ class QuestionBatchIntegrationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.questions = _load_test_questions(BATCH_TEST_QUERY_IDS)
+        cls.queries = _load_test_queries(BATCH_TEST_QUERY_IDS)
 
     def setUp(self):
         super().setUp()
@@ -378,20 +378,20 @@ class QuestionBatchIntegrationTests(unittest.TestCase):
 
         summary = run_question_batch(
             config=config,
-            question_ids=BATCH_TEST_QUERY_IDS,
-            questions=self.questions,
+            query_ids=BATCH_TEST_QUERY_IDS,
+            queries=self.queries,
             results_dir=self.tmp_dir,
         )
         self.assertEqual(summary['completed'], 3)
         self.assertEqual(summary['errors'], 0)
 
         exp_dir = os.path.join(self.tmp_dir, config.experiment_id)
-        for qid in BATCH_TEST_QUERY_IDS:
-            path = os.path.join(exp_dir, f'{qid}.json')
+        for query_id in BATCH_TEST_QUERY_IDS:
+            path = os.path.join(exp_dir, f'{query_id}.json')
             self.assertTrue(os.path.exists(path))
             with open(path) as f:
                 data = json.load(f)
-            self.assertEqual(data['question_id'], qid)
+            self.assertEqual(data['question_id'], query_id)
             self.assertTrue(data['system_answer'])
             self.assertIn('gold_doc_ranks', data)
             self.assertIsInstance(data['gold_doc_ranks'], list)
@@ -399,8 +399,8 @@ class QuestionBatchIntegrationTests(unittest.TestCase):
         # Second run should skip everything (checkpoint recovery).
         summary2 = run_question_batch(
             config=config,
-            question_ids=BATCH_TEST_QUERY_IDS,
-            questions=self.questions,
+            query_ids=BATCH_TEST_QUERY_IDS,
+            queries=self.queries,
             results_dir=self.tmp_dir,
         )
         self.assertEqual(summary2['skipped'], 3)

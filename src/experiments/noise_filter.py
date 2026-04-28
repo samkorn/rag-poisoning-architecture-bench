@@ -37,7 +37,9 @@ from dotenv import load_dotenv; load_dotenv()
 DEFAULT_MODEL = 'gpt-5-mini'
 DEFAULT_REASONING_EFFORT = 'high'
 
-QUESTIONS_PATH = os.path.join(
+# Filename keeps the legacy "nq-questions" prefix; the file is a list of
+# query records (id + question text + answers + gold_doc_ids).
+QUERIES_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
     '..', 'data', 'experiment-datasets',
     'nq-questions-gold-filtered.jsonl',
@@ -172,45 +174,49 @@ def check_noise(
 # Batch runner
 # ---------------------------------------------------------------------------
 
-def load_questions(questions_path: str) -> list[dict]:
-    """Load questions from gold-filtered JSONL."""
-    questions = []
-    with open(questions_path) as f:
+def load_questions(queries_path: str) -> list[dict]:
+    """Load query records from gold-filtered JSONL.
+
+    Function name kept as ``load_questions`` for backwards compatibility
+    with other callers; the loaded records are full query records.
+    """
+    queries = []
+    with open(queries_path) as f:
         for line in f:
             line_dict = json.loads(line)
-            questions.append(line_dict)
-    return questions
+            queries.append(line_dict)
+    return queries
 
 
 def run_noise_filter(
-    questions_path: str = QUESTIONS_PATH,
+    queries_path: str = QUERIES_PATH,
     output_dir: str = NOISE_OUTPUT_DIR,
     model: str = DEFAULT_MODEL,
     reasoning_effort: str = DEFAULT_REASONING_EFFORT,
     web_search: bool = True,
     limit: Optional[int] = None,
-    question_ids: Optional[set[str]] = None,
+    query_ids: Optional[set[str]] = None,
 ) -> list[dict]:
-    """Run noise filter with per-question checkpointing.
+    """Run noise filter with per-query checkpointing.
 
     Args:
-        questions_path: Path to gold-filtered questions JSONL.
-        output_dir: Directory for per-question result JSONs.
+        queries_path: Path to gold-filtered queries JSONL.
+        output_dir: Directory for per-query result JSONs.
         model: Model ID for noise classification.
         reasoning_effort: Reasoning effort level.
         web_search: Whether to enable web search tool.
-        limit: If set, only process this many questions (for testing).
-        question_ids: If set, only process these question IDs.
+        limit: If set, only process this many queries (for testing).
+        query_ids: If set, only process these query IDs.
 
     Returns list of result dicts (including cached).
     """
     os.makedirs(output_dir, exist_ok=True)
-    questions = load_questions(questions_path)
+    queries = load_questions(queries_path)
 
-    if question_ids is not None:
-        questions = [q for q in questions if q['query_id'] in question_ids]
+    if query_ids is not None:
+        queries = [query for query in queries if query['query_id'] in query_ids]
     if limit is not None:
-        questions = questions[:limit]
+        queries = queries[:limit]
 
     client = OpenAI()
     results = []
@@ -218,11 +224,11 @@ def run_noise_filter(
     completed = 0
     errors = 0
 
-    pbar = tqdm(questions, desc="Noise filter", unit='q')
+    pbar = tqdm(queries, desc="Noise filter", unit='q')
 
-    for q in pbar:
-        qid = q['query_id']
-        result_path = os.path.join(output_dir, f'{qid}.json')
+    for query in pbar:
+        query_id = query['query_id']
+        result_path = os.path.join(output_dir, f'{query_id}.json')
 
         # Checkpoint: skip if already classified.
         if os.path.exists(result_path):
@@ -236,11 +242,14 @@ def run_noise_filter(
             except (json.JSONDecodeError, OSError):
                 pass
 
+        # 'question_id' key matches the on-disk schema for noise JSONs (kept
+        # for backwards compatibility with persisted results); value is a
+        # query_id.
         result = {
-            'question_id': qid,
-            'question': q['question'],
-            'correct_answer': q['correct_answer'],
-            'target_answer': q['target_answer'],
+            'question_id': query_id,
+            'question': query['question'],
+            'correct_answer': query['correct_answer'],
+            'target_answer': query['target_answer'],
             'model': model,
             'reasoning_effort': reasoning_effort,
             'web_search': web_search,
@@ -258,9 +267,9 @@ def run_noise_filter(
         try:
             t0 = time.monotonic()
             noise_result, usage = check_noise(
-                question=q['question'],
-                correct_answer=q['correct_answer'],
-                target_answer=q['target_answer'],
+                question=query['question'],
+                correct_answer=query['correct_answer'],
+                target_answer=query['target_answer'],
                 model=model,
                 reasoning_effort=reasoning_effort,
                 web_search=web_search,
@@ -433,8 +442,8 @@ def main():
     parser.add_argument(
         '--questions', '-q',
         type=str,
-        default=QUESTIONS_PATH,
-        help=f"Path to questions JSONL (default: gold-filtered)",
+        default=QUERIES_PATH,
+        help=f"Path to queries JSONL (default: gold-filtered)",
     )
     parser.add_argument(
         '--output-dir', '-o',
@@ -487,7 +496,7 @@ def main():
     print()
 
     run_noise_filter(
-        questions_path=args.questions,
+        queries_path=args.questions,
         output_dir=args.output_dir,
         model=args.model,
         reasoning_effort=args.reasoning_effort,

@@ -62,22 +62,24 @@ def main():
     print(f"Loaded qrels for {len(qrels):,} queries")
 
     # --- Merge and write ----------------------------------------------------
-    question_ids = sorted(queries.keys(), key=lambda x: int(x.replace('test', '')))
+    query_ids = sorted(queries.keys(), key=lambda x: int(x.replace('test', '')))
 
     os.makedirs(os.path.join(_DATA_DIR, 'experiment-datasets'), exist_ok=True)
 
+    # Filename keeps the "nq-questions" prefix; the file is a list of full
+    # query records (id + question text + answers + gold_doc_ids).
     qjsonl_path = os.path.join(_DATA_DIR, 'experiment-datasets', 'nq-questions.jsonl')
     with open(qjsonl_path, 'w') as f:
-        for qid in question_ids:
+        for query_id in query_ids:
             record = {
-                'query_id': qid,
-                'question': queries[qid],
-                'correct_answer': correct.get(qid, ''),
-                'target_answer': targets.get(qid),
-                'gold_doc_ids': qrels.get(qid, []),
+                'query_id': query_id,
+                'question': queries[query_id],
+                'correct_answer': correct.get(query_id, ''),
+                'target_answer': targets.get(query_id),
+                'gold_doc_ids': qrels.get(query_id, []),
             }
             f.write(json.dumps(record, ensure_ascii=False) + '\n')
-    print(f"Wrote {qjsonl_path} ({len(question_ids):,} questions)")
+    print(f"Wrote {qjsonl_path} ({len(query_ids):,} questions)")
 
 
 if __name__ == '__main__':

@@ -98,14 +98,14 @@ def verify_smoke_results(experiment_id: str, expected_ids: list[str]) -> dict:
         return {'found_dir': False, 'results': {}}
 
     results: dict[str, dict] = {}
-    for qid in expected_ids:
-        path = os.path.join(exp_dir, f'{qid}.json')
+    for query_id in expected_ids:
+        path = os.path.join(exp_dir, f'{query_id}.json')
         if not os.path.exists(path):
-            results[qid] = {'found': False}
+            results[query_id] = {'found': False}
             continue
         with open(path) as f:
             data = json.load(f)
-        results[qid] = {
+        results[query_id] = {
             'found': True,
             'answer': data.get('system_answer', '')[:120],
             'error': data.get('error'),
@@ -171,10 +171,10 @@ class _OrchestratorSmokeMixin:
         verification = verify_smoke_results.remote(config.experiment_id, TEST_QUERY_IDS)
         self.assertTrue(verification['found_dir'],
                         f"{self.architecture}: no results dir on volume")
-        for qid, info in verification['results'].items():
-            self.assertTrue(info['found'], f"{self.architecture}/{qid}: missing")
+        for query_id, info in verification['results'].items():
+            self.assertTrue(info['found'], f"{self.architecture}/{query_id}: missing")
             self.assertFalse(info.get('error'),
-                             f"{self.architecture}/{qid}: {info.get('error')}")
+                             f"{self.architecture}/{query_id}: {info.get('error')}")
 
 
 @pytest.mark.modal
