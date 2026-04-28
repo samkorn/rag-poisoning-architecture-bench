@@ -1,4 +1,7 @@
-"""Builds 3 FAISS indexes (original, naive-poisoned, corruptrag-ak-poisoned) from pre-computed Contriever embeddings.
+"""Build 3 FAISS indexes from pre-computed Contriever embeddings.
+
+The indexes correspond to the three corpus variants used by the
+bench: `original`, `naive_poisoned`, and `corruptrag_ak_poisoned`.
 
 Prerequisites:
     Pre-computed Contriever embedding pickles in
@@ -18,7 +21,8 @@ Output:
 
       * `nq-original.faiss` + `nq-original-doc-ids.pkl`
       * `nq-naive-poisoned.faiss` + `nq-naive-poisoned-doc-ids.pkl`
-      * `nq-corruptrag-ak-poisoned.faiss` + `nq-corruptrag-ak-poisoned-doc-ids.pkl`
+      * `nq-corruptrag-ak-poisoned.faiss` +
+        `nq-corruptrag-ak-poisoned-doc-ids.pkl`
 
 Notes:
     Memory strategy — the ~8GB original embeddings dict is loaded
@@ -61,6 +65,15 @@ INDEX_PATHS = {
 
 
 def _load_pickle(path: str) -> dict:
+    """Load a pickled `{doc_id: embedding}` dict from disk with timing logs.
+
+    Args:
+        path: Absolute path to the pickle file.
+
+    Returns:
+        The unpickled dict. Entries are emitted to stdout as a
+        progress trace.
+    """
     print(f"  Loading {os.path.basename(path)}...")
     t0 = time.time()
     with open(path, 'rb') as f:
@@ -70,10 +83,16 @@ def _load_pickle(path: str) -> dict:
 
 
 def _normalize_embeddings_dict(embeddings_dict: dict[str, np.ndarray]) -> tuple[np.ndarray, list[str]]:
-    """Stack a {doc_id: embedding} dict into a normalized float32 matrix.
+    """Stack a `{doc_id: embedding}` dict into a normalized float32 matrix.
 
-    Returns (matrix, doc_ids) where matrix[i] is the L2-normalized embedding
-    for doc_ids[i].
+    Args:
+        embeddings_dict: Map from doc ID to its raw embedding
+            vector.
+
+    Returns:
+        Tuple `(matrix, doc_ids)` where `matrix[i]` is the
+        L2-normalized embedding for `doc_ids[i]`. Iteration order
+        matches `embeddings_dict.keys()`.
     """
     doc_ids = list(embeddings_dict.keys())
     matrix = np.stack([embeddings_dict[did] for did in doc_ids]).astype(np.float32)
@@ -82,7 +101,16 @@ def _normalize_embeddings_dict(embeddings_dict: dict[str, np.ndarray]) -> tuple[
 
 
 def _save_index(index: faiss.IndexFlatIP, doc_ids: list[str], corpus_type: str) -> None:
-    """Write a FAISS index + doc-id list to disk."""
+    """Write a FAISS index and its doc-id list to disk.
+
+    Args:
+        index: FAISS index already populated via `index.add`.
+        doc_ids: Parallel list of doc IDs aligned with the rows of
+            the matrix added to `index`. Written separately because
+            FAISS doesn't store string IDs natively.
+        corpus_type: Which corpus the index was built for; selects
+            the destination paths from `INDEX_PATHS`.
+    """
     paths = INDEX_PATHS[corpus_type]
     faiss.write_index(index, paths['index'])
     with open(paths['doc_ids'], 'wb') as f:
@@ -91,11 +119,12 @@ def _save_index(index: faiss.IndexFlatIP, doc_ids: list[str], corpus_type: str) 
 
 
 def build_all_indexes() -> None:
-    """Build all 3 FAISS indexes, loading the 8GB original embeddings only once.
+    """Build all 3 FAISS indexes, loading the 8GB original embeddings once.
 
-    Memory strategy: load the original dict, stack + normalize into a matrix
-    once, then drop the dict. The poisoned indexes reuse the original matrix
-    and just vstack the small poisoned vectors on top.
+    Loads the original embedding dict, stacks and normalizes it
+    into a matrix, drops the dict, then builds the original index
+    and the two poisoned indexes by `vstack`-ing each set of
+    poisoned vectors onto the normalized original matrix.
     """
     t0 = time.time()
 

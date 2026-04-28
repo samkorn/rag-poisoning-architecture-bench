@@ -1,8 +1,9 @@
-"""Contriever embedder — wraps `facebook/contriever` for batch and single-text embedding.
+"""Contriever embedder for batch and single-text encoding.
 
-Defines the `Embedder` class used by `embed_datasets.py` (offline
-corpus and query embedding) and `vector_store.py` (live query
-embedding fallback).
+Wraps `facebook/contriever` via `transformers`. Defines the
+`Embedder` class used by `embed_datasets.py` (offline corpus and
+query embedding) and `vector_store.py` (live query-embedding
+fallback).
 
 Usage:
     python src/embeddings/embeddings.py
@@ -32,14 +33,52 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 
 class Embedder:
+    """Wrap a Hugging Face encoder for batch and single-text embedding.
+
+    Loads tokenizer + model from a local path or HF hub on init,
+    moves them to CPU or CUDA, and exposes `embed` (batch) and
+    `embed_single` (one sentence). Used for both offline corpus
+    encoding (`embed_datasets.py`) and the live query-embedding
+    fallback in `VectorStore`.
+
+    Attributes:
+        device: Torch device the model lives on (`cpu` or `cuda`).
+        tokenizer: HF tokenizer loaded from `model_path`.
+        model: HF encoder loaded from `model_path`, in eval mode.
+    """
+
     def __init__(self, gpu: bool = False, model_path: str = 'facebook/contriever'):
+        """Load the tokenizer and encoder, move them to the chosen device.
+
+        Args:
+            gpu: When `True`, place the model on CUDA. Defaults to
+                CPU because corpus embedding runs once on Modal GPU
+                and live query embedding from `VectorStore` is rare
+                enough that CPU is fine.
+            model_path: Local path or HF hub repo for the encoder.
+                Defaults to `facebook/contriever`, the model the
+                bench was built against.
+        """
         self.device = torch.device('cuda' if gpu else 'cpu')
         self.tokenizer = AutoTokenizer.from_pretrained(model_path)
         self.model = AutoModel.from_pretrained(model_path).to(self.device)
         self.model.eval()
 
     def _mean_pooling(self, token_embeddings: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
-        """Mean-pool token embeddings over the sequence dim, ignoring padding."""
+        """Mean-pool token embeddings over the sequence dim, ignoring padding.
+
+        Args:
+            token_embeddings: Per-token hidden states from the
+                encoder, shape `(B, T, H)`.
+            attention_mask: Per-token mask from the tokenizer, shape
+                `(B, T)`. Padded positions are 0; real tokens are 1.
+
+        Returns:
+            Pooled sentence embeddings, shape `(B, H)`. Padded
+            positions are zeroed out before averaging so they don't
+            bias the pooled vector toward the zero-token region of
+            the embedding space.
+        """
         reshaped_mask = attention_mask.unsqueeze(-1).float()          # (B, T, 1)
         masked_embeddings = token_embeddings * reshaped_mask          # zero out padded positions
         summed_embeddings = masked_embeddings.sum(dim=1)              # (B, H)
@@ -47,6 +86,19 @@ class Embedder:
         return summed_embeddings / embedding_counts
 
     def embed(self, sentences: list[str]) -> list[np.ndarray]:
+        """Embed a batch of sentences.
+
+        Tokenizes with padding and truncation, runs the encoder
+        under `torch.no_grad`, then mean-pools and detaches each
+        row to a numpy array.
+
+        Args:
+            sentences: Input sentences, all encoded together as one
+                batch.
+
+        Returns:
+            One numpy embedding per input sentence, in input order.
+        """
         inputs = self.tokenizer(sentences, padding=True, truncation=True, return_tensors='pt')
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
         with torch.no_grad():
@@ -54,8 +106,18 @@ class Embedder:
         document_embeddings_array = self._mean_pooling(token_level_embeddings[0], inputs['attention_mask'])
         document_embeddings = [tensor.cpu().detach().numpy() for tensor in document_embeddings_array]
         return document_embeddings
-    
+
     def embed_single(self, sentence: str) -> np.ndarray:
+        """Embed a single sentence, returning its numpy vector.
+
+        Args:
+            sentence: Input sentence.
+
+        Returns:
+            Numpy embedding of shape `(1, H)`. Note the leading
+            singleton batch dimension — callers that want a flat
+            vector should `.squeeze()` or index `[0]`.
+        """
         inputs = self.tokenizer([sentence], padding=True, truncation=True, return_tensors='pt')
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
         with torch.no_grad():
