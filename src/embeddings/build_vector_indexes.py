@@ -92,29 +92,28 @@ def build_all_indexes() -> None:
     del original_dict  # free ~8 GB dict, keep ~8 GB matrix
     print(f"  Original matrix: {orig_matrix.shape}")
 
-    # TEMP: Commented out — these indexes already exist. Uncomment to rebuild.
-    # # 1. Original index
-    # print("\n=== Building ORIGINAL index ===")
-    # index = faiss.IndexFlatIP(EMBEDDING_DIM)
-    # index.add(orig_matrix)
-    # print(f"  Index size: {index.ntotal:,} vectors")
-    # _save_index(index, orig_doc_ids, 'original')
-    # del index
-    #
-    # # 2. Naive-poisoned index (original + naive poisoned docs)
-    # print("\n=== Building NAIVE-POISONED index ===")
-    # naive_dict = _load_pickle(EMBEDDINGS_PATHS['naive_poisoned'])
-    # naive_matrix, naive_doc_ids = _normalize_embeddings_dict(naive_dict)
-    # del naive_dict
-    # combined_matrix = np.vstack([orig_matrix, naive_matrix])
-    # combined_doc_ids = orig_doc_ids + naive_doc_ids
-    # print(f"  Combined: {orig_matrix.shape[0]:,} original + {naive_matrix.shape[0]:,} poisoned = {combined_matrix.shape[0]:,} total")
-    # del naive_matrix, naive_doc_ids
-    # index = faiss.IndexFlatIP(EMBEDDING_DIM)
-    # index.add(combined_matrix)
-    # print(f"  Index size: {index.ntotal:,} vectors")
-    # _save_index(index, combined_doc_ids, 'naive_poisoned')
-    # del index, combined_matrix, combined_doc_ids
+    # 1. Original index
+    print("\n=== Building ORIGINAL index ===")
+    index = faiss.IndexFlatIP(EMBEDDING_DIM)
+    index.add(orig_matrix)
+    print(f"  Index size: {index.ntotal:,} vectors")
+    _save_index(index, orig_doc_ids, 'original')
+    del index
+
+    # 2. Naive-poisoned index (original + naive poisoned docs)
+    print("\n=== Building NAIVE-POISONED index ===")
+    naive_dict = _load_pickle(EMBEDDINGS_PATHS['naive_poisoned'])
+    naive_matrix, naive_doc_ids = _normalize_embeddings_dict(naive_dict)
+    del naive_dict
+    combined_matrix = np.vstack([orig_matrix, naive_matrix])
+    combined_doc_ids = orig_doc_ids + naive_doc_ids
+    print(f"  Combined: {orig_matrix.shape[0]:,} original + {naive_matrix.shape[0]:,} poisoned = {combined_matrix.shape[0]:,} total")
+    del naive_matrix, naive_doc_ids
+    index = faiss.IndexFlatIP(EMBEDDING_DIM)
+    index.add(combined_matrix)
+    print(f"  Index size: {index.ntotal:,} vectors")
+    _save_index(index, combined_doc_ids, 'naive_poisoned')
+    del index, combined_matrix, combined_doc_ids
 
     # 3. CorruptRAG-AK-poisoned index (original + corruptrag-ak poisoned docs)
     print("\n=== Building CORRUPTRAG-AK-POISONED index ===")

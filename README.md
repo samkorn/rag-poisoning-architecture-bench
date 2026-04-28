@@ -4,7 +4,6 @@
   <a href="paper/paper.pdf">Paper</a>
   &nbsp;·&nbsp;
   <a href="https://doi.org/10.5281/zenodo.19582217">Data</a>
-  <!-- &nbsp;·&nbsp; <a href="#">Blog post</a> — TODO: add when published -->
 </p>
 
 <p align="center">
