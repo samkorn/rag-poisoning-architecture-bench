@@ -27,7 +27,7 @@ class ClientTimeoutUnitTests(unittest.TestCase):
         """execute_llm_call constructs OpenAI() with timeout set.
 
         Covers both Vanilla RAG and MADAM-RAG, which share the
-        ``src.architectures.utils.execute_llm_call`` path for every
+        `src.architectures.utils.execute_llm_call` path for every
         model invocation. Agentic and RLM construct their own clients
         through different paths and have dedicated tests below.
         """
@@ -77,11 +77,12 @@ class ClientTimeoutUnitTests(unittest.TestCase):
     def test_rlm_client_has_timeout(self):
         """RLM passes timeout via backend_kwargs to the underlying rlm package.
 
-        The rlm package forwards ``backend_kwargs['timeout']`` to
-        ``BaseLM.__init__(timeout=...)`` and then to ``openai.OpenAI(timeout=...)``
-        — see ``rlm/clients/base_lm.py`` and ``rlm/clients/openai.py``. That
-        client is constructed lazily on ``.completion()``, so this test asserts
-        the contract at our boundary: ``backend_kwargs`` contains the timeout.
+        The rlm package forwards `backend_kwargs['timeout']` to
+        `BaseLM.__init__(timeout=...)` and then to
+        `openai.OpenAI(timeout=...)` — see `rlm/clients/base_lm.py`
+        and `rlm/clients/openai.py`. That client is constructed
+        lazily on `.completion()`, so this test asserts the contract
+        at our boundary: `backend_kwargs` contains the timeout.
 
         VectorStore and load_title_to_doc_ids_map are mocked: both hit
         real data in normal use but aren't relevant to the timeout

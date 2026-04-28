@@ -27,6 +27,7 @@ _REPO_ROOT = os.path.normpath(
 
 
 def _data_present_or_skip(sentinel: str) -> None:
+    """Skip the calling test class when `sentinel` doesn't exist on disk."""
     if not os.path.exists(sentinel):
         raise unittest.SkipTest(
             f"Integration test requires {sentinel}. "
@@ -43,20 +44,24 @@ class JudgeHelpersUnitTests(unittest.TestCase):
     """Pure-Python normalization + substring matching from llm_judge."""
 
     def test_normalize_text_lowercases(self):
+        """Case is folded — `APPLE` and `apple` normalize identically."""
         from src.experiments.llm_judge import _normalize_text
         # 'apple' is a stop-word-free content word; stemming maps it to 'appl'.
         self.assertEqual(_normalize_text('APPLE'), _normalize_text('apple'))
 
     def test_normalize_text_strips_punctuation(self):
+        """Punctuation is stripped before comparison."""
         from src.experiments.llm_judge import _normalize_text
         self.assertEqual(_normalize_text('hello, world!'), _normalize_text('hello world'))
 
     def test_normalize_text_drops_stop_words(self):
+        """Stop words like `the` are removed from the normalized form."""
         from src.experiments.llm_judge import _normalize_text
         # 'the' is in STOP_WORDS; both should normalize to the same content.
         self.assertEqual(_normalize_text('the cat'), _normalize_text('cat'))
 
     def test_normalize_text_stems(self):
+        """`running` / `runs` / `run` collapse to the same Porter stem."""
         from src.experiments.llm_judge import _normalize_text
         # PorterStemmer maps 'running' / 'runs' / 'run' to a common stem.
         a = _normalize_text('running')
@@ -66,10 +71,12 @@ class JudgeHelpersUnitTests(unittest.TestCase):
         self.assertEqual(b, c)
 
     def test_check_target_substring_exact_match(self):
+        """Identical target and system answer counts as a match."""
         from src.experiments.llm_judge import check_target_substring
         self.assertTrue(check_target_substring('John Smith', 'John Smith'))
 
     def test_check_target_substring_near_match_with_stopwords(self):
+        """Match holds when stop words appear around the target."""
         from src.experiments.llm_judge import check_target_substring
         # 'the' is dropped, 'capital' stems consistently.
         self.assertTrue(
@@ -80,6 +87,7 @@ class JudgeHelpersUnitTests(unittest.TestCase):
         )
 
     def test_check_target_substring_word_reorder(self):
+        """Reordered words still match via the content-word-set check."""
         from src.experiments.llm_judge import check_target_substring
         # Both words present, just out of order — second check should catch it.
         self.assertTrue(
@@ -90,6 +98,7 @@ class JudgeHelpersUnitTests(unittest.TestCase):
         )
 
     def test_check_target_substring_clean_non_match(self):
+        """Different answers do not match."""
         from src.experiments.llm_judge import check_target_substring
         self.assertFalse(
             check_target_substring(
@@ -99,6 +108,7 @@ class JudgeHelpersUnitTests(unittest.TestCase):
         )
 
     def test_check_target_substring_empty_target_returns_false(self):
+        """Empty or `'none'` target always returns `False`."""
         from src.experiments.llm_judge import check_target_substring
         self.assertFalse(check_target_substring('', 'anything'))
         self.assertFalse(check_target_substring('none', 'anything'))
@@ -113,6 +123,7 @@ class JudgePromptUnitTests(unittest.TestCase):
     """
 
     def test_load_judge_prompt(self):
+        """Prompt loads, splits, and exposes the expected placeholders."""
         from src.experiments.llm_judge import load_judge_prompt
 
         system_prompt, user_template = load_judge_prompt()
@@ -138,6 +149,7 @@ class JudgeLocalReportIntegrationTests(unittest.TestCase):
         cls.review_csv = REVIEW_CSV
 
     def test_review_data_loads_with_expected_fields(self):
+        """Review CSV parses and every row carries the required fields."""
         from src.experiments.run_judge_local import load_review_data, _RESULTS_DIR
 
         review_data = load_review_data(self.review_csv)
@@ -170,16 +182,19 @@ class NoiseFilterIntegrationTests(unittest.TestCase):
         cls.noise_output_dir = NOISE_OUTPUT_DIR
 
     def test_questions_file_loads_at_expected_count(self):
+        """Gold-filtered questions file has the pinned 1150 entries."""
         with open(self.queries_path) as f:
             queries = [json.loads(line) for line in f]
         self.assertEqual(len(queries), 1150)
 
     def test_noise_exclusions_populate(self):
+        """`load_noise_exclusions` returns a non-empty set."""
         from src.experiments.noise_filter import load_noise_exclusions
         exclusions = load_noise_exclusions()
         self.assertGreater(len(exclusions), 0)
 
     def test_noise_result_files_have_expected_shape(self):
+        """A sample noise-result JSON contains `question_id` and `is_noise`."""
         noise_files = [f for f in os.listdir(self.noise_output_dir) if f.endswith('.json')]
         self.assertGreater(len(noise_files), 100)
 
@@ -202,6 +217,7 @@ class JudgeLocalSmallBatchIntegrationTests(unittest.TestCase):
         cls.review_csv = REVIEW_CSV
 
     def test_three_sample_batch_classifies_each(self):
+        """Live-API smoke: judge 3 samples and confirm every result lands."""
         from src.experiments.run_judge_local import load_review_data, run_validation
 
         review_data = load_review_data(self.review_csv)

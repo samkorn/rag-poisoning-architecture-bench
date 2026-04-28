@@ -28,6 +28,7 @@ TEST_QUERY_IDS = ['test0']
 
 
 def _modal_credentials_or_skip() -> None:
+    """Skip the calling test class when Modal credentials aren't configured."""
     if not os.path.exists(os.path.expanduser('~/.modal.toml')):
         raise unittest.SkipTest(
             "Modal credentials not found at ~/.modal.toml. "
@@ -43,6 +44,7 @@ class ModalConfigShapeUnitTests(unittest.TestCase):
     """ExperimentConfig values used by the Modal smoke runner — pure shape."""
 
     def test_smoke_configs_are_well_formed(self):
+        """Smoke `ExperimentConfig` round-trips and is correctly prefixed."""
         from src.experiments.experiment import ExperimentConfig
 
         config = ExperimentConfig(
@@ -135,10 +137,11 @@ def check_volume_data() -> dict:
 # ===========================================================================
 
 class _ModalRunContextMixin:
-    """Class-level ``with app.run()`` lifecycle.
+    """Provide a class-level `with app.run()` lifecycle for Modal tests.
 
-    Subclasses get a live Modal app context for the duration of every
-    method in the class, so ``func.remote(...)`` calls work directly.
+    Subclasses get a live Modal app context for the duration of
+    every method in the class, so `func.remote(...)` calls work
+    directly without each test re-opening the context.
     """
 
     @classmethod
@@ -161,6 +164,7 @@ class ModalVolumeIntegrationTests(_ModalRunContextMixin, unittest.TestCase):
     """Verify expected data dirs exist on the rag-poisoning-data volume."""
 
     def test_volume_has_required_directories(self):
+        """Vector store, original NQ, and experiment-datasets exist."""
         checks = check_volume_data.remote()
         for label, info in checks.items():
             self.assertTrue(info['exists'], f"Missing volume data: {label}")
@@ -171,6 +175,7 @@ class ModalContainerImportIntegrationTests(_ModalRunContextMixin, unittest.TestC
     """Container setup + src/ imports run cleanly on the Modal worker image."""
 
     def test_run_worker_with_empty_question_list(self):
+        """`run_worker` with zero queries exercises setup + imports."""
         from src.experiments.experiment import ExperimentConfig
         config = ExperimentConfig(
             experiment_id=f'{SMOKE_PREFIX}import_test',
@@ -197,6 +202,7 @@ class ModalVanillaCleanIntegrationTests(_ModalRunContextMixin, unittest.TestCase
         super().tearDown()
 
     def test_single_question_completes_with_result_on_volume(self):
+        """One vanilla-clean query writes a result JSON to the Modal Volume."""
         from src.experiments.experiment import ExperimentConfig
         config = ExperimentConfig(
             experiment_id=f'{SMOKE_PREFIX}vanilla_clean',
@@ -232,6 +238,7 @@ class ModalAgenticCleanIntegrationTests(_ModalRunContextMixin, unittest.TestCase
         super().tearDown()
 
     def test_single_question_completes(self):
+        """One agentic-clean query completes with no errors on Modal."""
         from src.experiments.experiment import ExperimentConfig
         config = ExperimentConfig(
             experiment_id=f'{SMOKE_PREFIX}agentic_clean',
