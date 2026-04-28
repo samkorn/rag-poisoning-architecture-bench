@@ -22,19 +22,21 @@ MODEL_DIR = '/vol/contriever'
 EMBED_BATCH_SIZE = 1024
 
 
-# facebook/contriever is a public model and does not require auth, so the
-# from_pretrained calls below are unauthenticated. If you ever see an HF
-# rate-limit (429) or authentication warning during the one-time download,
-# the fix is to add a Modal Secret containing HF_TOKEN to this function's
-# decorator and pass token=os.environ.get('HF_TOKEN') to both from_pretrained
-# calls.
 @app.function(
     image=contriever_image,
     volumes={MODEL_DIR: model_volume},
     timeout=60 * 10, # 10 minutes max
 )
 def download_model():
-    """Download Contriever to the volume once. No-ops if already cached."""
+    """Download Contriever to the volume once. No-ops if already cached.
+
+    facebook/contriever is a public model and does not require auth, so the
+    from_pretrained calls below are unauthenticated. If you ever see an HF
+    rate-limit (429) or authentication warning during the one-time download,
+    the fix is to add a Modal Secret containing HF_TOKEN to this function's
+    decorator and pass token=os.environ.get('HF_TOKEN') to both from_pretrained
+    calls.
+    """
     if os.path.exists(f'{MODEL_DIR}/config.json'):
         print("Model already cached on volume.")
         return

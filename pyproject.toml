@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "rag-poisoning-architecture-bench"
 version = "0.0.1"
-requires-python = ">=3.11"
+requires-python = ">=3.12,<3.13"
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -19,3 +19,10 @@ include = ["src*"]
 # handlers can't run.
 timeout = 900
 timeout_method = "thread"
+# Silence upstream FAISS/SWIG DeprecationWarnings on Python 3.12+:
+# SWIG-generated builtin types (SwigPyPacked, SwigPyObject, swigvarlink)
+# lack a __module__ attribute, which Python 3.12 newly warns about.
+# Tracked upstream at https://github.com/facebookresearch/faiss/issues/3526.
+filterwarnings = [
+    "ignore:builtin type (SwigPyPacked|SwigPyObject|swigvarlink) has no __module__ attribute:DeprecationWarning",
+]

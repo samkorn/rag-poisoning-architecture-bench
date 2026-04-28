@@ -6,7 +6,9 @@ __pycache__/
 dist/
 build/
 venv/
+venv
 .venv/
+.venv
 
 # Heavy data dirs (downloaded, generated, or symlinked during local dev).
 # Whole path is ignored — covers real dirs, symlinks, and contents alike.
