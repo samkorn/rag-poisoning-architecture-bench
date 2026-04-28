@@ -19,10 +19,16 @@ include = ["src*"]
 # handlers can't run.
 timeout = 900
 timeout_method = "thread"
-# Silence upstream FAISS/SWIG DeprecationWarnings on Python 3.12+:
-# SWIG-generated builtin types (SwigPyPacked, SwigPyObject, swigvarlink)
-# lack a __module__ attribute, which Python 3.12 newly warns about.
-# Tracked upstream at https://github.com/facebookresearch/faiss/issues/3526.
 filterwarnings = [
+    # Silence upstream FAISS/SWIG DeprecationWarnings on Python 3.12+:
+    # SWIG-generated builtin types (SwigPyPacked, SwigPyObject, swigvarlink)
+    # lack a __module__ attribute, which Python 3.12 newly warns about.
+    # Tracked upstream at https://github.com/facebookresearch/faiss/issues/3526.
     "ignore:builtin type (SwigPyPacked|SwigPyObject|swigvarlink) has no __module__ attribute:DeprecationWarning",
+    # Also silence pydantic_ai's `asyncio.get_event_loop()` DeprecationWarning
+    # (pydantic_ai/_utils.py:get_event_loop). Python 3.12 deprecates
+    # get_event_loop() when there is no running loop. The library intentionally
+    # falls back to creating a new loop via the standard try/except pattern; the
+    # warning fires before the fallback runs and is harmless to us.
+    "ignore:There is no current event loop:DeprecationWarning:pydantic_ai\\._utils",
 ]
