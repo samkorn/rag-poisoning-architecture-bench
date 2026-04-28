@@ -1,18 +1,30 @@
-"""
-Create nq-questions.jsonl for experiment workers.
+"""Builds `nq-questions.jsonl`, the unified per-query record file used by experiment workers.
 
-Merges three local sources into the unified format that the Modal workers
-expect:
-    - original-datasets/nq/queries.jsonl             (_id, text)
-    - experiment-datasets/nq-correct-answers.jsonl   (query_id, correct_answer)
-    - experiment-datasets/nq-incorrect-answers-poisoned-docs.jsonl
-                                                     (query_id, incorrect_answer)
+Merges three local sources into one record per query:
 
-Output (written to experiment-datasets/):
-    nq-questions.jsonl  — {query_id, question, correct_answer, target_answer} per line
+  * `original-datasets/nq/queries.jsonl` (`_id`, `text`)
+  * `experiment-datasets/nq-correct-answers.jsonl` (`query_id`,
+    `correct_answer`)
+  * `experiment-datasets/nq-incorrect-answers-poisoned-docs.jsonl`
+    (`query_id`, `incorrect_answer`)
+
+Prerequisites:
+    All three input files above must exist (run `create_correct_answers.py`
+    and `create_incorrect_answers_poisoned_docs.py` first).
 
 Usage:
     python src/data/create_questions.py
+
+Output:
+    `src/data/experiment-datasets/nq-questions.jsonl` — one
+    `{query_id, question, correct_answer, target_answer}` record per
+    line.
+
+Notes:
+    The filename keeps the legacy `question` prefix even though the
+    record is logically a query (id + question text + answers). The
+    name is referenced from analysis notebooks, paper tables, and
+    upstream BEIR conventions, so it's frozen — see CONVENTIONS.md.
 """
 
 import json

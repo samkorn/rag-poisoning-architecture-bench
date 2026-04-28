@@ -1,23 +1,32 @@
-"""
-experiments/llm_judge.py
+"""LLM judge pipeline for classifying RAG system responses.
 
-LLM judge pipeline for classifying RAG system responses.
+Uses OpenAI structured outputs (via `execute_llm_call`) to classify
+each response into one of 7 raw categories. Two additional heuristic
+target-answer detection methods run independently alongside the LLM
+judge.
 
-Uses OpenAI structured outputs (via execute_llm_call) to classify each
-response into one of 7 categories.  Two additional heuristic target-answer
-detection methods run independently alongside the LLM judge.
+Core functions — all parallelization-ready, no shared mutable state:
 
-Core functions (all parallelization-ready — no shared mutable state):
-  - load_judge_prompt()       — read & split the markdown prompt file
-  - judge_response()          — single LLM judgment via execute_llm_call()
-  - check_target_substring()  — aggressive normalized substring matching
-  - check_target_embedding()  — OpenAI embedding cosine similarity
-  - evaluate_response()       — orchestrate all three checks for one response
+  * `load_judge_prompt` — read and split the markdown prompt file.
+  * `judge_response` — single LLM judgment via `execute_llm_call`.
+  * `check_target_substring` — aggressive normalized substring
+    matching.
+  * `check_target_embedding` — OpenAI embedding cosine similarity.
+  * `evaluate_response` — orchestrate all three checks for one
+    response.
 
 Batch helpers:
-  - load_experiment_results() — load result JSONs from an experiment dir
-  - judge_experiment()        — batch judge with per-question checkpointing
-  - main()                    — CLI entry point
+
+  * `load_experiment_results` — load result JSONs from an experiment
+    directory.
+  * `judge_experiment` — batch judge with per-question checkpointing.
+  * `main` — CLI entry point.
+
+Notes:
+    The 7 raw categories are merged post-hoc into the 5-category
+    scheme used in the paper (CORRECT, CORRECT_WITH_DETECTION,
+    HEDGING, INCORRECT, UNKNOWN). The merge happens in the analysis
+    notebook, not here — this module emits the raw classification.
 """
 
 import argparse

@@ -1,16 +1,16 @@
 """Modal data-availability + small live experiment runs.
 
-These tests open an ``app.run()`` context from inside the test process and
-call deployed Modal functions via ``.remote()``. They require Modal
-credentials (~/.modal.toml) and an OpenAI key on the deployed Modal
-secret. Skipped cleanly otherwise.
+These tests open an `app.run()` context from inside the test process
+and call deployed Modal functions via `.remote()`. They require
+Modal credentials (`~/.modal.toml`) and an OpenAI key on the
+deployed Modal secret. Skipped cleanly otherwise.
 
 * :class:`ModalConfigShapeUnitTests` — pure-Python shape of the
-  ExperimentConfig values used by the smoke runner. No Modal call.
-* :class:`ModalVolumeIntegrationTests` — verify the expected data dirs
-  are present on the rag-poisoning-data volume.
-* :class:`ModalContainerImportIntegrationTests` — call ``run_worker`` with
-  zero questions to exercise container setup + imports.
+  `ExperimentConfig` values used by the smoke runner. No Modal call.
+* :class:`ModalVolumeIntegrationTests` — verify the expected data
+  dirs are present on the `rag-poisoning-data` volume.
+* :class:`ModalContainerImportIntegrationTests` — call `run_worker`
+  with zero questions to exercise container setup + imports.
 * :class:`ModalVanillaCleanIntegrationTests` — small live run on Modal.
 * :class:`ModalAgenticCleanIntegrationTests` — small live run on Modal.
 """

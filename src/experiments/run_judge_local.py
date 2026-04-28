@@ -1,18 +1,27 @@
-"""
-experiments/run_judge_local.py
+"""Sequential local runner for validating the LLM judge against the 41-question manual review sample.
 
-Sequential local runner for validating the LLM judge against the 41-question
-manual review sample (492 results across 12 experiments).
+Runs `evaluate_response` sequentially across the 41-question /
+492-result sample (12 experiments x 41 questions), writes per-question
+JSONs with checkpointing, then prints an agreement report comparing
+judge labels against human labels (accuracy, per-category
+precision/recall, confusion matrix, target-answer detection
+agreement).
 
-Runs evaluate_response() sequentially, writes per-question JSONs with
-checkpointing, then prints an agreement report comparing judge labels
-against human labels (accuracy, per-category precision/recall, confusion
-matrix, target-answer detection agreement).
+Prerequisites:
+    * `analysis/human_labels.csv` populated with human labels.
+    * Experiment result JSONs on disk under
+      `src/experiments/results/<experiment_dir>/`.
+    * OpenAI API key in the environment (the judge calls live).
 
 Usage:
-    python run_judge_local.py
-    python run_judge_local.py --reasoning-effort high
-    python run_judge_local.py --output-dir results/judge_validation/judge_validation_mini_high_v2
+    python src/experiments/run_judge_local.py
+    python src/experiments/run_judge_local.py --reasoning-effort high
+    python src/experiments/run_judge_local.py --output-dir results/judge_validation/judge_validation_mini_high_v2
+
+Output:
+    Per-question judge JSONs under
+    `src/experiments/results/judge_validation/<run_dir>/`, plus an
+    agreement report printed to stdout.
 """
 
 import argparse

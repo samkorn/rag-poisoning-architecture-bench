@@ -1,12 +1,14 @@
 """Unit tests asserting client-level HTTP timeouts on every architecture.
 
-These tests don't exercise actual timeout behavior (that would require
-simulating a hanging API call, which is slow and flaky). Instead, they
-verify that each architecture constructs its underlying OpenAI client with
-the expected ``timeout`` kwarg, catching regressions where a future edit
-silently drops the timeout.
+These tests don't exercise actual timeout behavior (that would
+require simulating a hanging API call, which is slow and flaky).
+Instead, they verify that each architecture constructs its
+underlying OpenAI client with the expected `timeout` kwarg, catching
+regressions where a future edit silently drops the timeout.
 
-See ``.claude/plans/CLIENT_TIMEOUT_REFACTOR.md`` for the design rationale.
+Notes:
+    See `.claude/plans/CLIENT_TIMEOUT_REFACTOR.md` for the design
+    rationale.
 """
 
 import unittest

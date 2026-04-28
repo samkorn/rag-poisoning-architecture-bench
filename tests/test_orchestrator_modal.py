@@ -8,7 +8,7 @@ failures easy to pinpoint.
 * :class:`OrchestratorSmokeConfigUnitTests` — pure shape of the smoke
   configs (no Modal call).
 * :class:`OrchestratorSmoke<Arch>IntegrationTests` — one class per
-  architecture, all marked ``modal``. Skipped when credentials are
+  architecture, all marked `modal`. Skipped when credentials are
   missing.
 """
 

@@ -1,24 +1,24 @@
-"""Unit tests for the Phase 5 bash orchestration scripts in ``scripts/``.
+"""Unit tests for the Phase 5 bash orchestration scripts in `scripts/`.
 
 These scripts are thin glue — their job is to sequence the Python
-entrypoints with the right args. We can't economically exercise the real
-pipeline (Modal spend + wall time), so the tests cover the three failure
-modes that a glue script can plausibly have:
+entrypoints with the right args. We can't economically exercise the
+real pipeline (Modal spend + wall time), so the tests cover the
+three failure modes that a glue script can plausibly have:
 
-1. Usage / argument parsing broken        — ``--help`` exits 0,
+1. Usage / argument parsing broken        — `--help` exits 0,
                                               unknown flags exit 2.
-2. Step sequence reordered or mis-quoted   — ``--dry-run`` output is
+2. Step sequence reordered or mis-quoted   — `--dry-run` output is
                                               pinned to a golden file.
 3. Prerequisite checks silently skipped    — running against a fake
-                                              ``REPO_ROOT`` that's missing
+                                              `REPO_ROOT` that's missing
                                               the required inputs must exit
                                               1 with a helpful message.
 
-The file is fully self-contained: tests that need a fake repo build it
-in a ``tempfile.TemporaryDirectory`` and never touch the live tree, so
-they don't depend on whether integration-test data is staged.
+The file is fully self-contained: tests that need a fake repo build
+it in a `tempfile.TemporaryDirectory` and never touch the live tree,
+so they don't depend on whether integration-test data is staged.
 
-Every script also gets ``shellcheck``'d and ``bash -n``'d separately at
+Every script also gets `shellcheck`'d and `bash -n`'d separately at
 the CI / pre-commit layer; this file is the behavioral check.
 """
 

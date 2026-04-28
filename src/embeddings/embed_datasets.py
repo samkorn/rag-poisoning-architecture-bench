@@ -1,3 +1,40 @@
+"""Computes Contriever embeddings for the NQ corpus, queries, and poisoned passages on Modal GPUs.
+
+One Modal app with three entrypoints — `embed_corpus`, `embed_queries`,
+`embed_poisoned_docs` — that mount `Embedder` from
+`src/embeddings/embeddings.py` and write pickled embedding dicts to
+`src/data/vector-store/`.
+
+Prerequisites:
+    * Modal credentials (`~/.modal.toml`).
+    * Source data populated by `src/data/download_datasets.py`,
+      `create_questions.py`, and the poisoned-doc generators.
+    * The `contriever-model` Modal Volume (auto-created on first run
+      via `download_model()`).
+
+Usage:
+    modal run src/embeddings/embed_datasets.py::embed_corpus
+    modal run src/embeddings/embed_datasets.py::embed_queries
+    modal run src/embeddings/embed_datasets.py::embed_poisoned_docs
+
+Output:
+    Pickled `{doc_id: np.ndarray}` dicts in `src/data/vector-store/`:
+
+      * `nq-original-documents-embeddings.pkl`
+      * `nq-queries-embeddings.pkl`
+      * `nq-naive-poisoned-documents-embeddings.pkl`
+      * `nq-corruptrag-ak-poisoned-documents-embeddings.pkl`
+
+Notes:
+    `facebook/contriever` is a public model and downloads
+    unauthenticated. If a future Modal run hits an HF rate-limit
+    (429) or auth warning during the one-time `download_model` call,
+    add a Modal Secret with `HF_TOKEN` and pass it through to the
+    `from_pretrained` calls. The HF / transformers env vars at the
+    top of this file silence noisy progress bars in Modal logs and
+    must be set before `import transformers`.
+"""
+
 import os
 # quiet HF / transformers (must be done before importing transformers)
 os.environ['TRANSFORMERS_VERBOSITY'] = 'error'

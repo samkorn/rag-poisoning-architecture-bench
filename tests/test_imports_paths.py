@@ -1,19 +1,22 @@
-"""Imports + path-constant resolution across the src/ package.
+"""Imports + path-constant resolution across the `src/` package.
 
 Two suites:
 
-* :class:`ImportUnitTests` — imports a curated set of modules that do
-  *not* perform import-time IO. Runs in the unit suite (no data).
+* :class:`ImportUnitTests` — imports a curated set of modules whose
+  imports don't pull in heavy native deps (Torch, FAISS) or touch
+  disk. Runs in the unit suite (no data required).
 * :class:`ModulePathsIntegrationTests` — imports every module under
-  ``src/`` and verifies the path constants they expose actually resolve
-  to files/dirs on disk. Requires the dataset to be present locally.
+  `src/` and verifies the path constants they expose actually
+  resolve to files/dirs on disk. Requires the dataset to be present
+  locally.
 
-Note on import-time IO: ``src.data.utils`` calls
-``_load_noise_question_ids()`` at import time, so any module that
-transitively imports it (most of ``src/`` except the orchestrator/
-experiment helpers) only loads when noise filter results are available.
-That's a code smell to revisit in Phase 7 — for now the unit suite
-just sticks to modules that don't trigger the cascade.
+Notes:
+    `src.data.utils` exposes a noise-filter exclusion loader, but
+    it's invoked lazily on first call rather than at import time, so
+    importing `src.data.utils` is itself unit-safe. The curated unit
+    list still skips modules that import Torch/FAISS at top level
+    because the import cost is real (multi-second), not because they
+    require data.
 """
 
 import importlib

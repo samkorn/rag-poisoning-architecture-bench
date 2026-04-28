@@ -1,3 +1,17 @@
+"""MADAM-RAG implementation: multi-agent debate over retrieved documents.
+
+Follows Wang et al. (COLM 2025): one agent per retrieved document
+generates an initial answer, then agents iterate, each round seeing
+peer responses, until consensus is reached or the round budget is
+exhausted. An aggregator agent emits the final answer.
+
+Notes:
+    The intra-round answer-normalization helper (`_normalize_answer`)
+    matches the SQuAD evaluation script's normalization, which the
+    MADAM paper inherits — strip punctuation, articles, and
+    whitespace before comparing for consensus.
+"""
+
 import os
 import re
 import string

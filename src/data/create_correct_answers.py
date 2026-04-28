@@ -1,3 +1,28 @@
+"""Generates short, factual correct answers for every NQ test query.
+
+For each query in `original-datasets/nq/`, looks up the gold passages
+via `qrels/test.tsv`, sends question + passages through a Modal-hosted
+LLM, and stores the extracted short answer.
+
+Prerequisites:
+    * `src/data/original-datasets/nq/` populated by
+      `src/data/download_datasets.py`.
+    * Modal credentials and the `openai-rag-poisoning` Modal Secret.
+
+Usage:
+    modal run src/data/create_correct_answers.py
+
+Output:
+    `src/data/experiment-datasets/nq-correct-answers.jsonl` — one
+    `{query_id, correct_answer}` record per line.
+
+Notes:
+    Uses a raw `openai` client rather than `src.architectures.utils.execute_llm_call`
+    to keep the Modal image minimal — the util module pulls in
+    pydantic/tenacity/qa_system, which aren't needed for a single
+    one-shot extraction call.
+"""
+
 import os
 import modal
 import json

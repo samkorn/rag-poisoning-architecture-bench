@@ -1,3 +1,31 @@
+"""Generates the naive-injection poisoned passage for every NQ test query.
+
+For each query, asks the LLM to (a) invent a plausible-but-incorrect
+answer matching the format of the correct answer and (b) write a
+short passage that naturally supports it. The passage is the
+adversarial document used in the `naive` attack condition.
+
+Prerequisites:
+    * `src/data/original-datasets/nq/` populated by
+      `src/data/download_datasets.py`.
+    * `src/data/experiment-datasets/nq-correct-answers.jsonl` from
+      `src/data/create_correct_answers.py`.
+    * Modal credentials and the `openai-rag-poisoning` Modal Secret.
+
+Usage:
+    modal run src/data/create_incorrect_answers_poisoned_docs.py
+
+Output:
+    `src/data/experiment-datasets/nq-incorrect-answers-poisoned-docs.jsonl`
+    — one `{query_id, incorrect_answer, poisoned_doc}` record per
+    line.
+
+Notes:
+    Uses a raw `openai` client rather than `src.architectures.utils.execute_llm_call`
+    to keep the Modal image minimal — the util module pulls in
+    pydantic/tenacity/qa_system, which aren't needed here.
+"""
+
 import os
 import modal
 import json

@@ -1,7 +1,7 @@
 """Local data-pipeline scripts: parse helpers (unit) and end-to-end runs (integration).
 
-Integration tests are split across multiple ``TestCase`` classes — one per
-script under exercise — for two reasons:
+Integration tests are split across multiple `TestCase` classes — one
+per script under exercise — for two reasons:
 
 1. Each script is logically independent.
 2. FAISS objects don't garbage-collect cleanly between tests in a single

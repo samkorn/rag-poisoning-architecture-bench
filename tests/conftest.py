@@ -8,9 +8,10 @@ doesn't warn, and so test runs can be sliced via `pytest -m`:
     pytest -m "modal"                           # Modal only
     pytest                                      # everything
 
-Integration and Modal classes are responsible for skipping themselves in
-``setUpClass`` if their prerequisites (data on disk, Modal credentials,
-OpenAI key) aren't available — see e.g. ``test_experiment.py``.
+Integration and Modal classes are responsible for skipping themselves
+in `setUpClass` if their prerequisites (data on disk, Modal
+credentials, OpenAI key) aren't available — see e.g.
+`test_experiment.py`.
 """
 
 import pytest

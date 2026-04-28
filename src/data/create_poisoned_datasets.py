@@ -1,11 +1,29 @@
-"""Assemble poisoned corpus directories from the original NQ dataset.
+"""Assembles poisoned corpus directories from the original NQ dataset.
 
-Creates two poisoned corpus directories:
+Creates two poisoned corpus directories — each a copy of
+`original-datasets/nq/` with poisoned docs appended to `corpus.jsonl`:
 
-1. nq-naive-poisoning/         — naive poisoned docs (from nq-incorrect-answers-poisoned-docs.jsonl)
-2. nq-corruptrag-ak-poisoning/ — CorruptRAG-AK poisoned docs (query prepended per p_i = p_i^s + p_i^h)
+  * `nq-naive-poisoning/` — naive poisoned docs sourced from
+    `nq-incorrect-answers-poisoned-docs.jsonl`.
+  * `nq-corruptrag-ak-poisoning/` — CorruptRAG-AK poisoned docs, with
+    the query prepended to each adversarial passage per the paper's
+    `p_i = p_i^s + p_i^h` formulation.
 
-Each directory is a copy of original-datasets/nq/ with poisoned docs appended to corpus.jsonl.
+Prerequisites:
+    * `src/data/original-datasets/nq/` from `download_datasets.py`.
+    * `nq-incorrect-answers-poisoned-docs.jsonl` from
+      `create_incorrect_answers_poisoned_docs.py`.
+    * `nq-corruptrag-ak-poisoned-docs.jsonl` from
+      `create_corruptrag_ak_poisoned_docs.py`.
+
+Usage:
+    python src/data/create_poisoned_datasets.py
+
+Output:
+    `src/data/experiment-datasets/nq-naive-poisoning/` and
+    `src/data/experiment-datasets/nq-corruptrag-ak-poisoning/`. Any
+    pre-existing copy is moved to a sibling `-BACKUP` directory
+    before being overwritten.
 """
 
 import json

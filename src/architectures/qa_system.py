@@ -1,3 +1,12 @@
+"""Abstract base class for RAG architectures.
+
+Defines the `QASystem` ABC, its shared constructor (model, reasoning
+effort, system prompt, top-K), and the `run()` dispatcher that accepts
+either a `query_id` (looked up via `src.data.utils`) or a raw question
+string. Concrete subclasses live in the sibling modules
+(`vanilla_rag.py`, `agentic_rag.py`, `madam_rag.py`, `recursive_lm.py`).
+"""
+
 from abc import ABC, abstractmethod
 from typing import Optional
 

@@ -1,3 +1,19 @@
+"""Recursive Language Model (RLM) architecture: full topic-context QA.
+
+Wraps the upstream `rlm` package to give the model the entire
+Wikipedia article (all passages sharing a `title`) for the gold doc,
+rather than the top-K nearest neighbors. The intent is to exercise
+the model's ability to handle long contexts without retrieval acting
+as a filter.
+
+Notes:
+    `top_k` is fixed at 100 (a deliberately oversized window) and
+    cannot be overridden by callers — passing `top_k=...` raises.
+    Title-grouped passages are sorted by `_doc_id_sort_key` so the
+    model sees them in original-corpus order. Per-call timeout flows
+    through `rlm` -> `OpenAIClient` -> `BaseLM` -> `openai.OpenAI`.
+"""
+
 import re
 import os
 import time

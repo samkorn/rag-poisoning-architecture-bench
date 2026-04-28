@@ -1,7 +1,7 @@
-"""Tests for src.experiments.llm_judge and src.experiments.noise_filter.
+"""Tests for `src.experiments.llm_judge` and `src.experiments.noise_filter`.
 
 * :class:`JudgeHelpersUnitTests` — pure-Python text-matching helpers
-  (``_normalize_text``, ``check_target_substring``). No data, no API.
+  (`_normalize_text`, `check_target_substring`). No data, no API.
 * :class:`JudgePromptUnitTests` — verify the markdown prompt file loads
   and has the expected placeholders. The prompt is committed to the
   repo, so no downloaded data is required.

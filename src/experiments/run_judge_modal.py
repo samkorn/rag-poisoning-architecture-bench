@@ -1,26 +1,33 @@
-"""
-experiments/run_judge_modal.py
-
-Parallel Modal runner for the LLM judge pipeline.
+"""Parallel Modal runner for the LLM judge pipeline.
 
 Supports two modes:
-  1. Full run — judges all ~12,840 experiment results
+
+  1. Full run — judges all ~12,840 experiment results.
   2. Validation — judges the 492-question human-labeled sample
+     (41 questions x 12 experiments).
+
+Prerequisites:
+    Modal credentials, the `openai-rag-poisoning` Modal Secret, and
+    experiment result JSONs already on the `rag-poisoning-data`
+    Modal Volume (uploaded by `src/experiments/upload_data.py`).
 
 Usage:
-    # --- Full judge run ---
-    modal run --detach experiments/run_judge_modal.py
+    modal run --detach src/experiments/run_judge_modal.py
+    modal run --detach src/experiments/run_judge_modal.py --validation
+    python src/experiments/run_judge_modal.py --validation --dry-run
+    python src/experiments/run_judge_modal.py --validation --report-only
+    python src/experiments/run_judge_modal.py --validation --report-only --timestamp 20260313-0015
+    modal run --detach src/experiments/run_judge_modal.py --validation --model gpt-5-nano --reasoning-effort medium
 
-    # --- Validation (41-question sample x 12 experiments) ---
-    modal run --detach experiments/run_judge_modal.py --validation
+Output:
+    Per-question judge JSONs under `/vol/results/judge/<run_dir>/`
+    on the Modal Volume; downloaded locally to
+    `src/experiments/results/judge/<run_dir>/` after each run.
 
-    # --- Dry run / report (local-only, no Modal upload) ---
-    python experiments/run_judge_modal.py --validation --dry-run
-    python experiments/run_judge_modal.py --validation --report-only
-    python experiments/run_judge_modal.py --validation --report-only --timestamp 20260313-0015
-
-    # Override model / reasoning (works for both modes)
-    modal run --detach experiments/run_judge_modal.py --validation --model gpt-5-nano --reasoning-effort medium
+Notes:
+    Uses a lighter image than `orchestrator.py` (no FAISS, Contriever,
+    or torch) — the judge only needs OpenAI access plus a few text
+    helpers.
 """
 
 import csv
