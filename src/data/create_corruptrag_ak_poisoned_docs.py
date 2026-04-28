@@ -64,6 +64,23 @@ WORD_LIMIT = 30
 
 @app.function(secrets=[modal.Secret.from_name('openai-rag-poisoning')])
 def refine_adversarial_string(query_id: str, question: str, adversarial_string: str) -> dict[str, str]:
+    """Run one adversarial string through the AK refinement prompt.
+
+    Sends the templated bracket-notation adversarial string to the
+    LLM with a one-shot example at `temperature=0`, capped at
+    `WORD_LIMIT` words. Strips any accidental `Revised Corpus:` /
+    `Revised:` label prefix the model emits.
+
+    Args:
+        query_id: NQ test query identifier.
+        question: Natural-language question (helps the model weave
+            query terms into the refined text).
+        adversarial_string: Bracket-notation template from
+            `ADVERSARIAL_STRING_TEMPLATE`.
+
+    Returns:
+        Dict with `query_id` and the refined `corruptrag_ak_text`.
+    """
     # Raw openai client (not src.architectures.utils.execute_llm_call): keeps the
     # Modal image minimal — the util pulls in pydantic/tenacity/qa_system and is
     # shaped for the experiment loop (Responses API, structured output, reasoning).
@@ -85,6 +102,14 @@ def refine_adversarial_string(query_id: str, question: str, adversarial_string: 
 
 @app.local_entrypoint()
 def main():
+    """Build and refine an adversarial string for every NQ test query.
+
+    Loads queries, correct answers, and target answers; constructs
+    the bracket-notation template per query; fans
+    `refine_adversarial_string.starmap` out across Modal workers;
+    writes the refined `corruptrag_ak_text` records to
+    `experiment-datasets/nq-corruptrag-ak-poisoned-docs.jsonl`.
+    """
     # Load queries
     print("Loading queries...")
     queries: dict[str, str] = {}

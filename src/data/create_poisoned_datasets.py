@@ -37,7 +37,17 @@ EXPERIMENT_DIR = os.path.join(DATA_DIR, 'experiment-datasets')
 
 
 def _safe_copy_original(output_dir: str) -> None:
-    """Copy original NQ dataset to output_dir, archiving any existing copy first."""
+    """Copy the original NQ dataset to `output_dir`, archiving prior copies.
+
+    Idempotent rebuild guard: if `output_dir` already exists, it's
+    moved to `<output_dir>-BACKUP` (overwriting any prior backup)
+    before a fresh copy lands. Avoids accidental data loss when
+    re-running this script.
+
+    Args:
+        output_dir: Destination directory, typically a sibling of
+            `original-datasets/nq` under `experiment-datasets/`.
+    """
     if os.path.exists(output_dir):
         backup_dir = output_dir + '-BACKUP'
         if os.path.exists(backup_dir):
@@ -51,6 +61,13 @@ def _safe_copy_original(output_dir: str) -> None:
 
 
 def main():
+    """Build both poisoned corpus directories from the original NQ corpus.
+
+    Resolves the single distinct gold-doc title per query (raises
+    if a query somehow points at multiple titles), then assembles
+    the naive and CorruptRAG-AK poisoned passages and appends them
+    to fresh copies of `corpus.jsonl`.
+    """
     # --- Shared data parsing (used by both naive and CorruptRAG-AK) ---
 
     # Parse queries

@@ -1,1 +1,1 @@
-"""Dataset assembly: BEIR NQ download, poisoned-corpus generation, and shared data utilities."""
+"""Dataset assembly: BEIR NQ, poisoned-corpus generation, shared utilities."""
