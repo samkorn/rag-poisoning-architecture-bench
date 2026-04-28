@@ -41,6 +41,18 @@ if modal.is_local():
 
 @dataclass
 class AgenticRAGDeps:
+    """Dependency bundle threaded through PydanticAI's `RunContext`.
+
+    Attributes:
+        vector_store: Shared `VectorStore` the agent's tools dispatch
+            to.
+        top_k: Number of passages returned by `search_knowledge_base`.
+        query_id: NQ test query ID. When set, lets `VectorStore` use
+            its precomputed query-embedding fast path. `None` for
+            ad-hoc questions.
+        log_tag: Prefix prepended to per-call log lines so concurrent
+            agent runs are distinguishable in worker logs.
+    """
     vector_store: VectorStore
     top_k: int
     query_id: Optional[str] = None
@@ -51,7 +63,22 @@ def search_knowledge_base(
     ctx: RunContext[AgenticRAGDeps],
     question: str,
 ) -> str:
-    """Search the knowledge base for documents relevant to a question."""
+    """Search the knowledge base for passages relevant to a question.
+
+    The agent's primary retrieval tool. Returns the top-K passages
+    concatenated into a single context block; the agent decides
+    whether to issue further searches or read individual documents
+    via `get_document_by_id`.
+
+    Args:
+        ctx: PydanticAI run context carrying the `AgenticRAGDeps`.
+        question: Search query the agent wants to issue (typically a
+            rephrasing of the user question or a focused sub-query).
+
+    Returns:
+        Newline-separated stringified passages, ordered by retrieval
+        score.
+    """
     tag = ctx.deps.log_tag
     print(f"{tag} >>> Searching knowledge base for question: {question}")
     retrieved_document_results = ctx.deps.vector_store.retrieve(
@@ -66,7 +93,19 @@ def search_knowledge_base(
 
 
 def get_document_by_id(ctx: RunContext[AgenticRAGDeps], doc_id: str) -> str:
-    """Get a specific document by ID for closer reading."""
+    """Fetch a single corpus document by its doc ID for closer reading.
+
+    Used by the agent when a passage surfaced via search looks
+    promising and the agent wants the full document text alongside
+    its title.
+
+    Args:
+        ctx: PydanticAI run context carrying the `AgenticRAGDeps`.
+        doc_id: Corpus document identifier (e.g. `doc12345`).
+
+    Returns:
+        The document formatted as `[doc_id] (title: ...)\\n<text>`.
+    """
     tag = ctx.deps.log_tag
     print(f"{tag} >>> Getting document by ID: {doc_id}")
     doc_dict = ctx.deps.vector_store.get_document_from_doc_id(doc_id)
@@ -79,6 +118,33 @@ def get_document_by_id(ctx: RunContext[AgenticRAGDeps], doc_id: str) -> str:
 # ------------------------------------------------------------------
 
 class AgenticRAG(QASystem):
+    """RAG architecture driven by a PydanticAI tool-use loop.
+
+    Wraps an `Agent` configured with two tools
+    (`search_knowledge_base`, `get_document_by_id`) over the shared
+    `VectorStore`. The model decides when to retrieve, how many
+    times, and when to stop, in contrast to Vanilla RAG's fixed
+    retrieve-then-generate flow.
+
+    Attributes:
+        agentic_rag_system_prompt: Class-level system prompt that
+            nudges the agent to always issue at least one initial
+            search before answering.
+        vector_store: Shared `VectorStore` the agent's tools
+            dispatch to.
+        openai_client: `AsyncOpenAI` client constructed once with
+            the shared `_LLM_CALL_TIMEOUT_SECONDS` HTTP timeout.
+        provider: PydanticAI `OpenAIProvider` wrapping
+            `openai_client`.
+        model: `OpenAIResponsesModel` bound to the model ID and the
+            provider.
+        model_settings: `OpenAIResponsesModelSettings` carrying
+            reasoning controls, or `None` when neither
+            `reasoning_effort` nor `reasoning_summary` was set.
+        agent: PydanticAI `Agent` driving the tool-use loop.
+            Constructed once per instance in `__init__` and reused
+            across every `_run` call.
+    """
 
     agentic_rag_system_prompt = """
     You are a helpful assistant that can answer questions about the context
@@ -90,6 +156,28 @@ class AgenticRAG(QASystem):
     """
 
     def __init__(self, corpus_type: str, top_k: int = 5, **kwargs):
+        """Initialize an Agentic RAG instance with its agent and tools.
+
+        Builds the shared `VectorStore`, the underlying `AsyncOpenAI`
+        client, and the PydanticAI `Agent` configured with both
+        retrieval tools.
+
+        Args:
+            corpus_type: Which corpus to retrieve from
+                (`original`, `naive_poisoned`, `corruptrag_ak_poisoned`).
+            top_k: Passages returned by each `search_knowledge_base`
+                invocation. Defaults to 5; the bench runs at
+                `top_k=10`.
+            **kwargs: Forwarded to `QASystem.__init__` (model,
+                reasoning controls, etc.).
+
+        Notes:
+            The `AsyncOpenAI` client is constructed once per
+            architecture instance with the shared
+            `_LLM_CALL_TIMEOUT_SECONDS` timeout. SDK-default retries
+            (max_retries=2) are kept because no `tenacity` wrapper
+            surrounds `agent.run_sync`.
+        """
         super().__init__(
             architecture='agentic_rag',
             corpus_type=corpus_type,
@@ -120,6 +208,22 @@ class AgenticRAG(QASystem):
         )
 
     def _run(self, question: str, query_id: str) -> str:
+        """Hand the question to the agent and return its final answer.
+
+        Builds an `AgenticRAGDeps` carrying the shared `VectorStore`
+        plus per-question metadata, then drives the agent's tool-use
+        loop synchronously to completion.
+
+        Args:
+            question: Natural-language question.
+            query_id: NQ test query ID, or `None` for ad-hoc
+                questions. Forwarded into `AgenticRAGDeps` so the
+                tool calls can use the precomputed query-embedding
+                fast path.
+
+        Returns:
+            The agent's final answer.
+        """
         deps = AgenticRAGDeps(
             vector_store=self.vector_store,
             top_k=self.top_k,
