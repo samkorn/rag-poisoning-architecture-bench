@@ -30,6 +30,8 @@ import threading
 from tenacity import retry, stop_after_attempt, wait_exponential_jitter
 from timeout_decorator import timeout
 
+from src.architectures.qa_system import QASystem
+
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -57,7 +59,6 @@ class ExperimentConfig:
     n_poisoned: int = 1  # Fixed at 1 for primary experiment
     defensive: bool = False  # Deferred to Phase 2
     backbone_model: str = 'gpt-5-mini'
-    # rlm_root_model: str = 'gpt-5.2'  # Only used when architecture="rlm" root agent
     reasoning_effort: Optional[str] = None  # e.g. "low", "medium"
 
     @property
@@ -273,11 +274,6 @@ def create_qa_system(config: ExperimentConfig):
         )
 
     elif config.architecture == 'rlm':
-        # # RLM root agent uses gpt-5.2 for paper fidelity.
-        # # top_k is forbidden — RLM uses full topic-scoped context internally.
-        # rlm_kwargs: dict = {'model_id': config.rlm_root_model}
-        # if config.reasoning_effort:
-        #     rlm_kwargs['reasoning_effort'] = config.reasoning_effort
         from src.architectures.recursive_lm import RLM
         return RLM(corpus_type=config.corpus_type, **common_kwargs)
 
@@ -292,7 +288,7 @@ def create_qa_system(config: ExperimentConfig):
 def _run_single_question(
     config: ExperimentConfig,
     question: dict,
-    qa_system,
+    qa_system: QASystem,
     log_tag: str,
 ) -> QuestionResult:
     """Inner execution: run one question.
@@ -425,7 +421,7 @@ _run_single_question_retry_thread_timed = retry(
 def run_single_question(
     config: ExperimentConfig,
     question: dict,  # {_id, text, answer, target_answer?, ...}
-    qa_system,  # Pre-instantiated QASystem subclass
+    qa_system: QASystem,  # Pre-instantiated QASystem subclass
     question_num: Optional[int] = None,
     batch_size: Optional[int] = None,
 ) -> QuestionResult:
@@ -505,7 +501,7 @@ def run_question_batch(
     # which loads the FAISS index + corpus once (singleton).  Subsequent
     # VectorStore(corpus_type) calls from RetrievalCapture or anywhere
     # else return the cached instance instantly.
-    qa_system = create_qa_system(config)
+    qa_system: QASystem = create_qa_system(config)
 
     completed = 0
     skipped = 0
