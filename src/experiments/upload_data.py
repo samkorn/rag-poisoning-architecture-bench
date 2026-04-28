@@ -83,12 +83,33 @@ _ARCHIVE_MARKERS = {'ARCHIVE', 'BACKUP'}
 
 
 def _is_archived(path: str) -> bool:
-    """Check if any component of a path contains an archive/backup marker."""
+    """Return whether `path` contains an `_ARCHIVE_MARKERS` substring.
+
+    Args:
+        path: Filesystem path. Case-insensitive match against
+            `_ARCHIVE_MARKERS` (`ARCHIVE`, `BACKUP`).
+
+    Returns:
+        `True` if any marker appears anywhere in the path, used to
+        skip whole directories like `nq-naive-poisoning-BACKUP/`.
+    """
     return any(marker in path.upper() for marker in _ARCHIVE_MARKERS)
 
 
 def collect_local_files(local_dir: str) -> list[tuple[str, str]]:
-    """Walk a local directory and return (local_path, relative_path) pairs."""
+    """Walk `local_dir` and return upload-eligible files.
+
+    Skips archived/backup paths, `.DS_Store` files, and any file
+    whose name ends with a `_SKIP_SUFFIXES` entry (raw embedding
+    pickles).
+
+    Args:
+        local_dir: Directory to walk.
+
+    Returns:
+        List of `(local_path, relative_path)` tuples, where
+        `relative_path` is the path under `local_dir`.
+    """
     pairs: list[tuple[str, str]] = []
     for root, _dirs, files in os.walk(local_dir):
         if _is_archived(root):
@@ -107,7 +128,14 @@ def collect_local_files(local_dir: str) -> list[tuple[str, str]]:
 
 
 def fmt_size(nbytes: int | float) -> str:
-    """Human-readable file size."""
+    """Format a byte count into a human-readable string (`B`, `KB`, ...).
+
+    Args:
+        nbytes: Size in bytes.
+
+    Returns:
+        Compact human-readable string (e.g. `1.4 GB`).
+    """
     for unit in ('B', 'KB', 'MB', 'GB'):
         if nbytes < 1024:
             return f"{nbytes:.1f} {unit}"
@@ -116,7 +144,15 @@ def fmt_size(nbytes: int | float) -> str:
 
 
 def get_remote_files() -> set[str]:
-    """List all files currently on the Modal volume."""
+    """List every file currently on the Modal volume.
+
+    Shells out to `modal volume ls --json`. Falls back to an empty
+    set when the command fails (e.g. the volume is empty or the
+    `--json` flag isn't supported by the installed Modal CLI).
+
+    Returns:
+        Set of filenames.
+    """
     result = subprocess.run(
         ['modal', 'volume', 'ls', VOLUME_NAME, '--json'],
         capture_output=True, text=True,
@@ -133,7 +169,15 @@ def get_remote_files() -> set[str]:
 
 
 def upload_file(local_path: str, remote_path: str) -> bool:
-    """Upload a single file via `modal volume put`. Returns True on success."""
+    """Upload a single file via `modal volume put`.
+
+    Args:
+        local_path: Source file on the local disk.
+        remote_path: Destination path on the Modal volume.
+
+    Returns:
+        `True` on success; `False` and prints stderr on failure.
+    """
     result = subprocess.run(
         ['modal', 'volume', 'put', VOLUME_NAME, local_path, remote_path],
         capture_output=True, text=True,
@@ -149,6 +193,13 @@ def upload_file(local_path: str, remote_path: str) -> bool:
 # ---------------------------------------------------------------------------
 
 def main():
+    """CLI entry point — upload data dirs to the `rag-poisoning-data` Volume.
+
+    Runs preflight checks for the two question files, then walks
+    each `_UPLOAD_DIRS` source and uploads each file via
+    `modal volume put`. With `--force`, always re-uploads;
+    otherwise skips files that already exist on the volume.
+    """
     parser = argparse.ArgumentParser(description="Upload experiment data to Modal Volume")
     parser.add_argument('--force', action='store_true', help="Re-upload all files, even if they already exist")
     args = parser.parse_args()

@@ -1,10 +1,11 @@
-"""NOISE filter — identifies questions where the target answer is also a plausible correct answer.
+"""NOISE filter — flag queries whose target answer is also valid.
 
-These questions make ASR unmeasurable (the model can't tell whether
-the attack succeeded or the model just happened to pick a co-valid
-answer) and are excluded from attack metrics. Runs once per question
-(not per experiment) on the 1,150 gold-doc-filtered queries, using
-the model's parametric knowledge rather than retrieved documents.
+These queries make ASR unmeasurable (the model can't tell whether
+the attack succeeded or it just happened to pick a co-valid
+answer) and are excluded from attack metrics. Runs once per query
+(not per experiment) on the 1,150 gold-doc-filtered queries,
+using the model's parametric knowledge rather than retrieved
+documents.
 
 Core functions:
 
@@ -82,7 +83,18 @@ TARGET_ANSWER: {target_answer}"""
 # ---------------------------------------------------------------------------
 
 class NoiseResult(BaseModel):
-    """Structured output for noise classification."""
+    """Structured output schema for noise classification.
+
+    Attributes:
+        reasoning: Brief explanation of whether the target answer
+            is also a plausible correct answer.
+        is_noise: True when the target answer is fully or
+            partially valid as a correct answer.
+        noise_type: `full` if the target is fully valid; `partial`
+            if some items overlap (list questions); `none` if the
+            target is wrong.
+        confidence: Self-reported confidence in the classification.
+    """
     reasoning: str = Field(
         description=(
             "Brief explanation of whether the target"
@@ -120,10 +132,30 @@ def check_noise(
     web_search: bool = True,
     client: Optional[OpenAI] = None,
 ) -> tuple[NoiseResult, dict]:
-    """Check if target answer is also a plausible correct answer.
+    """Classify a single query for whether its target answer is also valid.
 
-    Returns (NoiseResult, usage_dict) where usage_dict has input_tokens,
-    output_tokens, and total_tokens.
+    Sends the noise prompt with optional web-search tool use,
+    parses the structured response, and applies a post-hoc
+    consistency fix so `noise_type` is the authoritative field
+    when it disagrees with `is_noise`.
+
+    Args:
+        question: Natural-language question text.
+        correct_answer: Gold short-form answer.
+        target_answer: Adversarial answer the attacker tried to
+            elicit.
+        model: OpenAI model used for classification.
+        reasoning_effort: Reasoning-effort level.
+        web_search: Whether to enable the web-search tool.
+        client: Optional pre-built `OpenAI` client; a fresh one is
+            constructed when omitted.
+
+    Returns:
+        Tuple `(NoiseResult, usage)`. `usage` has `input_tokens`,
+        `output_tokens`, and `total_tokens`.
+
+    Raises:
+        ValueError: If the model refuses structured output.
     """
     if client is None:
         client = OpenAI()
@@ -175,10 +207,19 @@ def check_noise(
 # ---------------------------------------------------------------------------
 
 def load_questions(queries_path: str) -> list[dict]:
-    """Load query records from gold-filtered JSONL.
+    """Load query records from a gold-filtered JSONL file.
 
-    Function name kept as ``load_questions`` for backwards compatibility
-    with other callers; the loaded records are full query records.
+    Args:
+        queries_path: Path to the JSONL (typically
+            `nq-questions-gold-filtered.jsonl`).
+
+    Returns:
+        List of full query records, in file order.
+
+    Notes:
+        Function name kept as `load_questions` for backwards
+        compatibility with other callers; the loaded records are
+        full query records — see CONVENTIONS.md.
     """
     queries = []
     with open(queries_path) as f:
@@ -197,18 +238,26 @@ def run_noise_filter(
     limit: Optional[int] = None,
     query_ids: Optional[set[str]] = None,
 ) -> list[dict]:
-    """Run noise filter with per-query checkpointing.
+    """Run the noise filter sequentially with per-query checkpointing.
+
+    Already-classified queries with no error are loaded from disk
+    and skipped; new ones are classified via `check_noise` and
+    written immediately so partial progress survives interruption.
 
     Args:
-        queries_path: Path to gold-filtered queries JSONL.
+        queries_path: Path to the gold-filtered queries JSONL.
         output_dir: Directory for per-query result JSONs.
-        model: Model ID for noise classification.
-        reasoning_effort: Reasoning effort level.
-        web_search: Whether to enable web search tool.
-        limit: If set, only process this many queries (for testing).
-        query_ids: If set, only process these query IDs.
+        model: OpenAI model used for classification.
+        reasoning_effort: Reasoning-effort level.
+        web_search: Whether to enable the web-search tool.
+        limit: When set, only the first `limit` queries are
+            processed (for smoke tests).
+        query_ids: When set, only queries whose `query_id` is in
+            this set are processed.
 
-    Returns list of result dicts (including cached).
+    Returns:
+        List of result dicts in processing order, including
+        already-cached entries.
     """
     os.makedirs(output_dir, exist_ok=True)
     queries = load_questions(queries_path)
@@ -307,10 +356,17 @@ def run_noise_filter(
 # ---------------------------------------------------------------------------
 
 def load_noise_exclusions(noise_dir: str = NOISE_OUTPUT_DIR) -> set[str]:
-    """Load set of question IDs to exclude from metrics.
+    """Load the set of full-NOISE question IDs from a results directory.
 
-    Returns IDs where is_noise=True and noise_type='full'.
+    Returns IDs where `is_noise=True` and `noise_type='full'`.
     Partial NOISE is NOT excluded by default.
+
+    Args:
+        noise_dir: Directory holding per-query noise-result JSONs.
+
+    Returns:
+        Set of `question_id` strings to exclude from attack
+        metrics. Empty when the directory doesn't exist.
     """
     exclusions = set()
     if not os.path.isdir(noise_dir):
@@ -336,7 +392,15 @@ def load_noise_exclusions(noise_dir: str = NOISE_OUTPUT_DIR) -> set[str]:
 # ---------------------------------------------------------------------------
 
 def print_report(noise_dir: str = NOISE_OUTPUT_DIR) -> None:
-    """Print summary of noise filter results from cached JSONs."""
+    """Print a summary of noise-filter results from cached JSONs.
+
+    Reports counts by `noise_type` and confidence, latency stats,
+    token totals, and a list of full-NOISE / partial-NOISE
+    questions. Read-only — safe to run any time.
+
+    Args:
+        noise_dir: Directory holding per-query noise-result JSONs.
+    """
     if not os.path.isdir(noise_dir):
         print(f"No results found at {noise_dir}")
         return
@@ -436,6 +500,7 @@ def print_report(noise_dir: str = NOISE_OUTPUT_DIR) -> None:
 # ---------------------------------------------------------------------------
 
 def main():
+    """CLI entry point — run the noise filter or print a cached report."""
     parser = argparse.ArgumentParser(
         description="NOISE filter — identify questions where the target answer is also plausible"
     )

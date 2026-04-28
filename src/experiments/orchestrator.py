@@ -126,14 +126,15 @@ secrets = [
 # ---------------------------------------------------------------------------
 
 def setup_container():
-    """Create data symlinks inside a Modal container.
+    """Symlink the Modal Volume's data subdirs into `/root/src/data/`.
 
-    Called at the top of every worker / orchestrator function.
-
-    The src package is mounted at /root/src/ via add_local_python_source.
-    VectorStore and data/utils.py resolve paths relative to their own __file__,
-    so they look for data at /root/src/data/vector-store, etc. We symlink the
-    Volume's data subdirectories there.
+    Called at the top of every worker and orchestrator function.
+    The `src` package is mounted at `/root/src/` via
+    `add_local_python_source`; `VectorStore` and `data/utils.py`
+    resolve paths relative to their own `__file__`, so they look
+    for data under `/root/src/data/vector-store`, etc. The Volume
+    is mounted at `VOLUME_MOUNT` and we symlink each subdirectory
+    into the expected location.
     """
     # Symlink heavy data directories from Volume into /root/src/data/
     # (where add_local_python_source mounts the src package).
@@ -152,14 +153,19 @@ def setup_container():
 # ---------------------------------------------------------------------------
 
 def build_experiment_matrix() -> list:
-    """Build the ordered list of 12 experiments (4 architectures × 3 attacks).
+    """Build the ordered list of 12 experiments (4 architectures x 3 attacks).
 
-    Fixed k=10 for non-RLM architectures; RLM uses full topic context (k=None).
-    Order: fast experiments first for early sanity checking.
-      Phase 1 — Vanilla RAG   (3 exp)
-      Phase 2 — Agentic RAG   (3 exp)
-      Phase 3 — RLM           (3 exp)
-      Phase 4 — MADAM-RAG     (3 exp)
+    Fixed `k=10` for non-RLM architectures; RLM uses full topic
+    context (`k=None`). Order is fast-first for early sanity
+    checking:
+
+      1. Vanilla RAG (3 cells)
+      2. Agentic RAG (3 cells)
+      3. RLM (3 cells)
+      4. MADAM-RAG (3 cells)
+
+    Returns:
+        List of 12 `ExperimentConfig` instances in the order above.
     """
     from src.experiments.experiment import ExperimentConfig
 
@@ -215,11 +221,19 @@ def build_experiment_matrix() -> list:
 
 
 def is_experiment_complete(experiment_id: str, n_queries: int) -> bool:
-    """Check if all queries have *successful* result JSONs for this experiment.
+    """Return whether every query has a successful result JSON on disk.
 
-    Only counts results where ``error`` is None.  Error results from previous
-    rate-limit failures etc. are ignored so the orchestrator will re-dispatch
-    workers for that experiment.
+    Only counts results where `error` is `None`. Error results
+    from previous rate-limit failures etc. are ignored, so the
+    orchestrator will re-dispatch workers for that experiment.
+
+    Args:
+        experiment_id: Identifier of the experiment cell.
+        n_queries: Expected total number of successful results.
+
+    Returns:
+        `True` when at least `n_queries` successful JSONs exist
+        in the experiment's result directory.
     """
     exp_dir = os.path.join(EXPERIMENTS_DIR, experiment_id)
     if not os.path.isdir(exp_dir):
@@ -252,11 +266,20 @@ def is_experiment_complete(experiment_id: str, n_queries: int) -> bool:
     max_containers=99, # 100 default Modal limit minus 1 for orchestrator
 )
 def run_worker(config_dict: dict, query_ids: list[str]) -> dict:
-    """Worker: process a batch of queries for one experiment.
+    """Process one worker's batch of queries for one experiment.
 
-    Each invocation runs in its own Modal container.  Loads the FAISS index
-    and QA system once, then iterates through its assigned queries with
-    per-query checkpointing.
+    Runs in its own Modal container. Sets up data symlinks, loads
+    the FAISS index and QA system once, then iterates through the
+    assigned queries with per-query checkpointing.
+
+    Args:
+        config_dict: Serialized `ExperimentConfig` (round-tripped
+            via `to_dict()`).
+        query_ids: Subset of query IDs this worker should process.
+
+    Returns:
+        Counts dict from `run_question_batch` (`completed`,
+        `skipped`, `errors`, `total`).
     """
     setup_container()
 
@@ -296,11 +319,14 @@ def run_worker(config_dict: dict, query_ids: list[str]) -> dict:
     timeout=60*60*24,  # 24 hours - estimated time for all experiments
 )
 def run_orchestrator():
-    """Main orchestrator: run all 12 experiments sequentially.
+    """Run all 12 experiments sequentially, fanning workers out per experiment.
 
-    Each experiment dispatches up to 99 parallel workers via starmap().
-    Fully checkpoint-recoverable: re-running skips completed experiments
-    and completed questions.
+    Each experiment dispatches up to 99 parallel `run_worker`
+    containers via `.starmap`. Fully checkpoint-recoverable:
+    re-running skips experiments that are already complete and
+    queries within an experiment that already have a successful
+    result JSON. Per-experiment summaries are written to
+    `summary.json` under each experiment's result directory.
     """
     setup_container()
 
@@ -385,8 +411,8 @@ def run_orchestrator():
 
 @app.local_entrypoint()
 def main():
-    """Dispatch orchestrator to a Modal container.
+    """Local entrypoint — dispatch the orchestrator to a Modal container.
 
-    Usage:  modal run --detach experiments/orchestrator.py
+    Invoke via `modal run --detach src/experiments/orchestrator.py`.
     """
     run_orchestrator.remote()

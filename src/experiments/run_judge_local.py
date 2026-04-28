@@ -1,11 +1,11 @@
-"""Sequential local runner for validating the LLM judge against the 41-question manual review sample.
+"""Local LLM-judge validation runner against the human-labeled sample.
 
-Runs `evaluate_response` sequentially across the 41-question /
-492-result sample (12 experiments x 41 questions), writes per-question
-JSONs with checkpointing, then prints an agreement report comparing
-judge labels against human labels (accuracy, per-category
-precision/recall, confusion matrix, target-answer detection
-agreement).
+Runs `evaluate_response` sequentially across the
+41-question / 492-result sample (12 experiments x 41 questions),
+writes per-question JSONs with checkpointing, then prints an
+agreement report comparing judge labels against human labels
+(accuracy, per-category precision/recall, confusion matrix,
+target-answer detection agreement).
 
 Prerequisites:
     * `analysis/human_labels.csv` populated with human labels.
@@ -16,7 +16,8 @@ Prerequisites:
 Usage:
     python src/experiments/run_judge_local.py
     python src/experiments/run_judge_local.py --reasoning-effort high
-    python src/experiments/run_judge_local.py --output-dir results/judge_validation/judge_validation_mini_high_v2
+    python src/experiments/run_judge_local.py \
+        --output-dir results/judge_validation/judge_validation_mini_high_v2
 
 Output:
     Per-question judge JSONs under
@@ -63,10 +64,18 @@ DEFAULT_OUTPUT_DIR = os.path.join(_JUDGE_VALIDATION_DIR, 'judge_validation')
 
 
 def _find_local_validation_dir(timestamp: str) -> str | None:
-    """Find a local judge_validation_* dir matching the given timestamp.
+    """Find a local `judge_validation_*` directory matching `timestamp`.
 
-    Looks in `results/judge_validation/` (current runs) first, then falls
-    back to `results/archive/` (superseded runs).
+    Looks in `results/judge_validation/` (current runs) first, then
+    falls back to `results/archive/` (superseded runs).
+
+    Args:
+        timestamp: Timestamp suffix (e.g. `20260313-0015`) to
+            match against directory names.
+
+    Returns:
+        Absolute path to the matching directory, or `None` if no
+        match was found.
     """
     for parent in (_JUDGE_VALIDATION_DIR, _ARCHIVE_DIR):
         if not os.path.isdir(parent):
@@ -86,7 +95,14 @@ def _find_local_validation_dir(timestamp: str) -> str | None:
 # ---------------------------------------------------------------------------
 
 def load_review_data(csv_path: str = REVIEW_CSV) -> list[dict]:
-    """Load the human-reviewed sample data from CSV."""
+    """Load the human-reviewed sample data from a CSV file.
+
+    Args:
+        csv_path: Path to the human-labels CSV.
+
+    Returns:
+        List of row dicts in CSV order (`csv.DictReader` output).
+    """
     rows = []
     with open(csv_path, newline='') as f:
         reader = csv.DictReader(f)
@@ -106,9 +122,25 @@ def run_validation(
     reasoning_effort: str = DEFAULT_REASONING_EFFORT,
     embedding_model: str = EMBEDDING_MODEL,
 ) -> list[dict]:
-    """Run the judge over all review samples with checkpointing.
+    """Run the judge over every review sample, with per-question checkpointing.
 
-    Returns list of judge result dicts (augmented with human labels).
+    Pre-scans the output directory for cached judgments so the
+    progress bar starts at the right position; new judgments are
+    written to disk immediately and augmented with the human label
+    from `review_data`.
+
+    Args:
+        review_data: Rows from `human_labels.csv`.
+        output_dir: Destination directory for per-experiment
+            subdirectories of judge JSONs.
+        model: OpenAI model used by the judge.
+        reasoning_effort: Reasoning-effort level passed to the
+            judge model.
+        embedding_model: Embedding model used by the cosine check.
+
+    Returns:
+        List of judge-result dicts (cached + new), each augmented
+        with `human_label` and `human_target_present`.
     """
     system_message, user_message_template = load_judge_prompt()
     openai_client = OpenAI()
@@ -232,7 +264,14 @@ def run_validation(
 
 
 def _fmt_duration(seconds: float) -> str:
-    """Format seconds into human-readable duration."""
+    """Format a duration in seconds into a compact human-readable string.
+
+    Args:
+        seconds: Duration in seconds.
+
+    Returns:
+        `Xs`, `XmYY.Ys`, or `XhYYmZZ.Zs` depending on magnitude.
+    """
     if seconds < 60:
         return f"{seconds:.1f}s"
     m, s = divmod(seconds, 60)
@@ -250,11 +289,23 @@ def load_cached_results(
     output_dir: str,
     review_data: list[dict],
 ) -> list[dict]:
-    """Load previously judged results from checkpoint files.
+    """Load previously judged results, augmenting each with human labels.
 
-    Augments each result with human_label and human_target_present from
-    the review data so the agreement report works without re-judging.
-    Excludes NOISE questions.
+    Used by the report-only path to rebuild an agreement report
+    without re-running the judge. NOISE-classified questions are
+    excluded.
+
+    Args:
+        output_dir: Directory holding per-experiment subdirs of
+            judge JSONs from a prior run.
+        review_data: Rows from `human_labels.csv` providing
+            `human_label` and `target_present` to graft onto each
+            judge result.
+
+    Returns:
+        List of judge-result dicts augmented with `human_label`
+        and `human_target_present`. Any judge file without a
+        classification is skipped.
     """
     from src.data.utils import get_noise_question_ids
     noise_ids = get_noise_question_ids()
@@ -294,9 +345,22 @@ def load_cached_results(
 
 
 def build_agreement_report(judge_results: list[dict], review_data: list[dict]) -> str:
-    """Build the full agreement report as a string.
+    """Build the full agreement report comparing judge vs human labels.
 
-    Returns the report text (also suitable for writing to a file).
+    Computes overall accuracy, per-category precision/recall, the
+    confusion matrix, and target-detection agreement across all
+    three target-detection methods (LLM, substring, embedding).
+
+    Args:
+        judge_results: Output of `run_validation` or
+            `load_cached_results` — judge dicts augmented with
+            `human_label` and `human_target_present`.
+        review_data: Rows from `human_labels.csv`. Used for
+            denominators and target-present ground truth.
+
+    Returns:
+        Multi-section report string (also suitable for writing to
+        disk).
     """
     import numpy as np
 
@@ -572,7 +636,18 @@ def print_and_save_report(
     review_data: list[dict],
     output_dir: str,
 ):
-    """Build the agreement report, print it, and save to output_dir/report.txt."""
+    """Build the agreement report, print it, and save it to disk.
+
+    The report is written to `<output_dir>/report.txt` so each
+    validation run keeps its report alongside the per-question
+    judge JSONs.
+
+    Args:
+        judge_results: Augmented judge results from
+            `run_validation` or `load_cached_results`.
+        review_data: Rows from `human_labels.csv`.
+        output_dir: Directory where the report file lands.
+    """
     report = build_agreement_report(judge_results, review_data)
     print(report)
 
@@ -588,6 +663,7 @@ def print_and_save_report(
 # ---------------------------------------------------------------------------
 
 def main():
+    """CLI entry point — run the validation judge or print a cached report."""
     parser = argparse.ArgumentParser(
         description="Validate LLM judge against human-labeled sample"
     )

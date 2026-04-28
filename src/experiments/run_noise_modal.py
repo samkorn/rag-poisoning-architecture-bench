@@ -1,4 +1,4 @@
-"""Modal runner for the NOISE filter — parallelizes noise classification across up to 99 containers.
+"""Modal runner for the NOISE filter — fans out across 99 containers.
 
 Prerequisites:
     Modal credentials, the `openai-rag-poisoning` Modal Secret, and
@@ -82,7 +82,22 @@ def classify_noise(
     reasoning_effort: str,
     web_search: bool = True,
 ) -> dict:
-    """Classify a single query as NOISE or not. One unit of starmap work."""
+    """Classify one query for noise on Modal. One unit of `starmap` work.
+
+    Imports the lightweight `check_noise` helper, runs the
+    classification call, and writes the per-query JSON to the
+    volume before returning.
+
+    Args:
+        query: Full per-query record from the gold-filtered JSONL.
+        model: OpenAI model used for classification.
+        reasoning_effort: Reasoning-effort level.
+        web_search: Whether to enable the web-search tool.
+
+    Returns:
+        Result dict that mirrors the on-disk JSON. `error` is
+        non-`None` when the underlying call raised.
+    """
     import sys
     if '/app' not in sys.path:
         sys.path.insert(0, '/app')
@@ -156,7 +171,20 @@ def classify_noise(
     timeout=60 * 60,  # 1 hour
 )
 def run_noise_orchestrator(model: str, reasoning_effort: str, web_search: bool = True, dry_run: bool = False):
-    """Load queries from volume, skip already-classified, dispatch workers."""
+    """Dispatch noise-classification workers across the gold-filtered queries.
+
+    Loads the query list from the volume, filters out queries
+    already classified successfully, and fans `classify_noise`
+    out across up to 99 Modal containers via `.starmap`. Prints
+    progress every 50 results.
+
+    Args:
+        model: OpenAI model used for classification.
+        reasoning_effort: Reasoning-effort level.
+        web_search: Whether to enable the web-search tool.
+        dry_run: When `True`, print what would happen and return
+            without dispatching workers.
+    """
     volume.reload()
 
     # Load gold-filtered queries from volume.
@@ -253,9 +281,14 @@ def run_noise_orchestrator(model: str, reasoning_effort: str, web_search: bool =
 # ---------------------------------------------------------------------------
 
 def download_results() -> str:
-    """Download noise results from Modal Volume to local results/noise/ dir.
+    """Download noise results from the Modal Volume to the local results dir.
 
-    Returns the local output directory path.
+    Mirrors `/vol/results/noise/` to
+    `src/experiments/results/noise/`. Skips files that are already
+    present locally with a non-empty size.
+
+    Returns:
+        Path to the local output directory.
     """
     vol = modal.Volume.from_name('rag-poisoning-data')
     local_dir = os.path.join(_EXPERIMENTS_DIR, 'results', 'noise')
@@ -305,6 +338,14 @@ def main(
     web_search: bool = True,
     dry_run: bool = False,
 ):
+    """Local entrypoint — run the orchestrator, download, and report.
+
+    Args:
+        model: OpenAI model used for classification.
+        reasoning_effort: Reasoning-effort level.
+        web_search: Whether to enable the web-search tool.
+        dry_run: When `True`, only print what would happen.
+    """
     run_noise_orchestrator.remote(
         model=model,
         reasoning_effort=reasoning_effort,
