@@ -57,7 +57,24 @@ ATTACK_TO_CORPUS: dict[str, str] = {
 
 @dataclass
 class ExperimentConfig:
-    """Immutable specification for one of the 12 experiments."""
+    """Specify one of the 12 experiment cells in the bench matrix.
+
+    Attributes:
+        experiment_id: Stable identifier used for the result
+            directory (e.g. `vanilla_clean`, `rlm_corruptrag_ak`).
+        architecture: Which RAG architecture to run.
+        attack_type: Which attack condition to evaluate against.
+        k: Top-K for retrieval. `None` for RLM, which uses
+            topic-scoped context instead of fixed-K retrieval.
+        n_poisoned: Number of injected poisoned documents per query.
+            Fixed at 1 for the primary experiment.
+        defensive: Reserved for Phase 2 defensive variants;
+            currently unused.
+        backbone_model: OpenAI model identifier shared across
+            architectures.
+        reasoning_effort: Optional reasoning-effort level passed to
+            the architectures' OpenAI calls.
+    """
 
     experiment_id: str  # e.g. "vanilla_clean", "rlm_corruptrag_ak"
     architecture: Literal['vanilla', 'agentic', 'madam', 'rlm']
@@ -70,10 +87,19 @@ class ExperimentConfig:
 
     @property
     def corpus_type(self) -> str:
-        """Map attack_type to the VectorStore corpus identifier."""
+        """Map `attack_type` to its `VectorStore` corpus identifier."""
         return ATTACK_TO_CORPUS[self.attack_type]
 
     def to_dict(self) -> dict:
+        """Serialize to a plain dict, including the derived `corpus_type`.
+
+        Used by the Modal worker to round-trip the config across
+        process boundaries (Modal pickles plain dicts more cheaply
+        than dataclass instances).
+
+        Returns:
+            Dict with every field plus a derived `corpus_type` key.
+        """
         d = asdict(self)
         d['corpus_type'] = self.corpus_type
         return d
@@ -83,11 +109,38 @@ class ExperimentConfig:
 class QuestionResult:
     """Result for a single query within an experiment.
 
-    The class name and the ``question_id`` / ``question_text`` field names
-    are kept (rather than ``QueryResult`` / ``query_id`` / ``question``) to
-    preserve the on-disk JSON schema across all ~14k persisted result files.
-    Per the project naming standard, "query" is the conceptual identifier;
-    the JSON keys are the legacy schema names.
+    The class name and the `question_id` / `question_text` field
+    names are kept (rather than `QueryResult` / `query_id` /
+    `question`) to preserve the on-disk JSON schema across all
+    ~14k persisted result files. Per the project naming standard,
+    "query" is the conceptual identifier; the JSON keys are the
+    legacy schema names — see CONVENTIONS.md.
+
+    Attributes:
+        experiment_id: Identifier of the experiment cell this
+            result belongs to.
+        question_id: On-disk schema field; conceptually the
+            `query_id`.
+        question_text: Natural-language question text.
+        correct_answer: Gold short-form answer.
+        target_answer: Attacker's desired wrong answer; `None` for
+            the clean condition.
+        system_answer: The answer the architecture produced.
+        retrieved_doc_ids: Doc IDs returned by the architecture's
+            primary (initial) retrieval call.
+        poison_retrieved: Whether a poisoned doc appeared in the
+            primary retrieval. `None` for the clean condition.
+        poison_rank: 1-indexed rank of the first poisoned doc in
+            the primary retrieval, or `None` if none was retrieved.
+        gold_doc_ranks: 1-indexed ranks of every gold doc that
+            appeared in the primary retrieval (sorted ascending).
+        metadata: Architecture-specific extras
+            (`passages_text_length` for Vanilla/MADAM,
+            `n_retrieve_calls` and `doc_fetches` for Agentic,
+            `context_doc_ids` and `context_n_docs` for RLM, etc.).
+        latency_seconds: Wall time of the `_run` call.
+        error: `None` on success; otherwise the captured exception
+            type, message, and traceback.
     """
 
     experiment_id: str
@@ -115,6 +168,15 @@ class QuestionResult:
     error: Optional[str] = None
 
     def to_json(self) -> str:
+        """Serialize to a JSON string for per-question result files.
+
+        Uses `default=str` to gracefully stringify any unexpected
+        non-JSON-native fields (e.g. exceptions captured into
+        `error`).
+
+        Returns:
+            JSON string with no ASCII escaping.
+        """
         return json.dumps(asdict(self), default=str, ensure_ascii=False)
 
 
@@ -130,10 +192,19 @@ def make_log_tag(
 ) -> str:
     """Build a bracketed tag for log lines.
 
-    Examples::
+    Args:
+        config: Experiment config; supplies architecture, k, and
+            attack type.
+        query_id: NQ test query identifier.
+        question_num: 1-indexed position of this question within
+            its batch. Optional.
+        batch_size: Total number of questions in the batch.
+            Optional. Both `question_num` and `batch_size` must be
+            provided together to render the `q=i/N` suffix.
 
-        [madam k=3 clean test0]
-        [madam k=3 clean test0 q=3/12]
+    Returns:
+        Bracketed tag, e.g. `[madam k=3 clean test0]` or
+        `[madam k=3 clean test0 q=3/12]`.
     """
     parts = [config.architecture]
     if config.k is not None:
@@ -146,10 +217,17 @@ def make_log_tag(
 
 
 def is_poison_doc_id(doc_id: str) -> bool:
-    """Return True if *doc_id* belongs to an injected poisoned document.
+    """Return whether `doc_id` belongs to an injected poisoned document.
 
-    Original NQ passages have IDs like "doc0", "doc12345".
-    Poisoned documents start with "poisoned" (e.g. "poisoned-naive-q:test3").
+    Original NQ passages have IDs like `doc0`, `doc12345`. Poisoned
+    documents are prefixed with `poisoned` (e.g.
+    `poisoned-naive-q:test3`).
+
+    Args:
+        doc_id: Corpus document identifier.
+
+    Returns:
+        `True` if the ID is poisoned, `False` otherwise.
     """
     return doc_id.startswith('poisoned')
 
@@ -157,9 +235,15 @@ def is_poison_doc_id(doc_id: str) -> bool:
 def detect_poison_in_results(
     retrieved_docs: list[dict],
 ) -> tuple[bool, Optional[int]]:
-    """Scan retrieval results for a poisoned document.
+    """Scan retrieval results for the first poisoned document.
 
-    Returns (poison_found, 1-indexed rank or None).
+    Args:
+        retrieved_docs: Result list from `VectorStore.retrieve`.
+
+    Returns:
+        Tuple `(poison_found, rank)`. `rank` is the 1-indexed
+        position of the first poisoned doc, or `None` if none was
+        found.
     """
     for i, doc in enumerate(retrieved_docs):
         if is_poison_doc_id(doc['doc_id']):
@@ -173,7 +257,13 @@ def detect_gold_in_results(
 ) -> list[int]:
     """Find 1-indexed ranks of gold-standard documents in retrieval results.
 
-    Returns sorted list of ranks (empty if no gold docs retrieved).
+    Args:
+        retrieved_docs: Result list from `VectorStore.retrieve`.
+        gold_doc_ids: Doc IDs that count as gold for the query.
+
+    Returns:
+        Sorted list of 1-indexed ranks. Empty when no gold doc
+        appeared in the retrieval.
     """
     gold_set = set(gold_doc_ids)
     return [i + 1 for i, doc in enumerate(retrieved_docs)
@@ -181,9 +271,19 @@ def detect_gold_in_results(
 
 
 def split_query_ids(query_ids: list[str], n_workers: int = 99) -> list[list[str]]:
-    """Split query IDs into *n_workers* roughly-equal batches (round-robin).
+    """Split query IDs into roughly equal round-robin batches.
 
-    ~1150 / 99 ~ 11-12 queries per worker.
+    For the bench's ~1150 questions and 99 workers, this yields
+    11–12 queries per worker.
+
+    Args:
+        query_ids: All query IDs to distribute.
+        n_workers: Number of worker batches to produce. Defaults
+            to 99 (Modal's per-app concurrency limit).
+
+    Returns:
+        List of non-empty batches. Empty trailing batches (when
+        `n_workers > len(query_ids)`) are omitted.
     """
     batches: list[list[str]] = [[] for _ in range(n_workers)]
     for i, query_id in enumerate(query_ids):
@@ -196,31 +296,53 @@ def split_query_ids(query_ids: list[str], n_workers: int = 99) -> list[list[str]
 # ---------------------------------------------------------------------------
 
 class RetrievalCapture:
-    """Capture all VectorStore retrieval activity during a _run() call.
+    """Capture every `VectorStore` retrieval call during a `_run()` invocation.
 
-    Monkeypatches retrieve() and get_document_from_doc_id() on the VectorStore
-    instance for the duration of the context manager.  Since VectorStore is a
-    singleton, the architecture's own self.vector_store IS the same object, so
-    the capture sees everything the architecture does — including Agentic RAG's
-    tool-driven retrieval and RLM's title-group expansion.
+    Monkeypatches `retrieve()` and `get_document_from_doc_id()` on
+    the `VectorStore` instance for the duration of the context
+    manager. Since `VectorStore` is a singleton, the architecture's
+    own `self.vector_store` IS the same object — so the capture
+    sees everything the architecture does, including Agentic RAG's
+    tool-driven retrievals and RLM's title-group expansion.
 
-    Usage::
-
+    Example:
         with RetrievalCapture(vector_store) as capture:
             answer = qa_system._run(question_text, query_id)
-        # capture.retrieve_calls  — list of {kwargs, results} per retrieve() call
-        # capture.doc_fetches     — list of doc_ids fetched via get_document_from_doc_id()
+        # capture.retrieve_calls  — list of {kwargs, results} per call
+        # capture.doc_fetches     — list of fetched doc IDs
 
-    Design note: monkeypatch over the obvious alternatives because (a) Agentic
-    RAG dispatches through Pydantic AI's tool loop and RLM through the
-    third-party ``rlm`` library, so a wrapper VectorStore would have to be
-    plumbed through APIs we don't own, and (b) instrumenting VectorStore
-    itself puts per-question state on a process-lifetime singleton, which
-    breaks silently under the tenacity retry on _run_single_question. The
-    context-manager scoping makes the patch self-cleaning even on exception.
+    Notes:
+        Monkeypatching is preferred over the obvious alternatives:
+        (a) Agentic RAG dispatches through PydanticAI's tool loop
+        and RLM through the third-party `rlm` package, so a
+        wrapper `VectorStore` would have to be plumbed through APIs
+        we don't own; and (b) instrumenting `VectorStore` itself
+        would put per-question state on a process-lifetime
+        singleton, which breaks silently under the tenacity retry
+        wrapping `_run_single_question`. Context-manager scoping
+        makes the patch self-cleaning even on exception.
+
+    Attributes:
+        vector_store: The `VectorStore` instance being patched.
+        retrieve_calls: One entry per `retrieve()` call, each a
+            dict with `kwargs` and `results` keys.
+        doc_fetches: Every doc ID passed to
+            `get_document_from_doc_id()` during the capture window.
+        _orig_retrieve: Saved reference to the unpatched
+            `retrieve` method, restored on exit.
+        _orig_get_doc: Saved reference to the unpatched
+            `get_document_from_doc_id` method, restored on exit.
     """
 
     def __init__(self, vector_store):
+        """Stash references to the original `VectorStore` methods.
+
+        The patch isn't installed until `__enter__`, so constructing
+        a `RetrievalCapture` outside a `with` block is harmless.
+
+        Args:
+            vector_store: The `VectorStore` instance to wrap.
+        """
         self.vector_store = vector_store
         self.retrieve_calls: list[dict] = []
         self.doc_fetches: list[str] = []
@@ -228,6 +350,7 @@ class RetrievalCapture:
         self._orig_get_doc = vector_store.get_document_from_doc_id
 
     def __enter__(self):
+        """Install the capturing wrappers and return `self`."""
         def capturing_retrieve(*args, **kwargs):
             result = self._orig_retrieve(*args, **kwargs)
             self.retrieve_calls.append({'kwargs': kwargs, 'results': result})
@@ -243,6 +366,7 @@ class RetrievalCapture:
         return self
 
     def __exit__(self, *exc):
+        """Restore the original methods, even on exception."""
         self.vector_store.retrieve = self._orig_retrieve
         self.vector_store.get_document_from_doc_id = self._orig_get_doc
         return False
@@ -253,11 +377,22 @@ class RetrievalCapture:
 # ---------------------------------------------------------------------------
 
 def create_qa_system(config: ExperimentConfig):
-    """Instantiate the QASystem subclass for *config*.
+    """Instantiate the `QASystem` subclass matching `config`.
 
-    Each architecture's constructor internally creates a VectorStore singleton
-    for the appropriate corpus_type, so clean/poisoned index selection is
-    handled automatically.
+    Each architecture's constructor internally creates a
+    `VectorStore` singleton for the appropriate `corpus_type`, so
+    clean/poisoned index selection is handled automatically.
+
+    Args:
+        config: Experiment specification. Drives which subclass is
+            constructed and which `corpus_type` it loads.
+
+    Returns:
+        A ready-to-run `QASystem` subclass instance.
+
+    Raises:
+        ValueError: If `config.architecture` isn't one of the four
+            supported values.
     """
     common_kwargs: dict = {'model_id': config.backbone_model}
     if config.reasoning_effort:
@@ -305,15 +440,38 @@ def _run_single_question(
     qa_system: QASystem,
     log_tag: str,
 ) -> QuestionResult:
-    """Inner execution: run one question.
+    """Run one query and assemble its `QuestionResult`.
 
-    Per-question outer timeout enforced by the module-level
-    ``_run_single_question_retry_{signal,thread}_timed`` wrappers (10 min,
-    auto-dispatched by thread context). Per-LLM-call timeout is configured on
-    the OpenAI client itself (see ``_LLM_CALL_TIMEOUT_SECONDS`` in
-    ``src/architectures/utils.py``), not via decorator.
+    Wraps `qa_system._run` in a `RetrievalCapture` context, then
+    extracts retrieval-derived metadata (poison rank, gold ranks)
+    and architecture-specific extras (doc fetches for Agentic and
+    RLM, etc.).
 
-    Raises on failure — caller (run_single_question) catches and records errors.
+    Args:
+        config: Experiment configuration.
+        query: Per-query record from `nq-questions.jsonl`. Expected
+            keys: `query_id`, `question`, `correct_answer`,
+            optional `target_answer`, optional `gold_doc_ids`.
+        qa_system: Pre-instantiated `QASystem` subclass matching
+            `config.architecture`.
+        log_tag: Bracketed prefix from `make_log_tag` prepended to
+            log lines.
+
+    Returns:
+        A populated `QuestionResult` (success path).
+
+    Raises:
+        Exception: Any error from the architecture or retrieval is
+            propagated. The outer `run_single_question` wrapper
+            catches it and records it in the result file's `error`
+            field.
+
+    Notes:
+        Per-question outer timeout is enforced by the module-level
+        `_run_single_question_retry_{signal,thread}_timed` wrappers
+        (10 min, auto-dispatched by thread context). Per-LLM-call
+        timeout lives on the OpenAI client itself (see
+        `_LLM_CALL_TIMEOUT_SECONDS` in `src/architectures/utils.py`).
     """
     query_id: str = query['query_id']
     question_text: str = query['question']
@@ -439,18 +597,35 @@ def run_single_question(
     question_num: Optional[int] = None,
     batch_size: Optional[int] = None,
 ) -> QuestionResult:
-    """Execute one query through the configured architecture.
+    """Execute one query through the configured architecture, capturing errors.
 
-    Function name kept as ``run_single_question`` (rather than
-    ``run_single_query``) for stability — it is referenced by Modal log
-    history and downstream scripts.
+    Wraps `_run_single_question` in retry + timeout (per-question
+    10-min ceiling, signal-based on the main thread and
+    multiprocessing-based on worker threads). On failure, returns
+    a `QuestionResult` with the captured error rather than raising
+    — one bad question cannot crash a worker or lose batch
+    progress.
 
-    Delegates to ``_run_single_question`` via a retry+timeout wrapper
-    (per-question 10-min ceiling, auto-dispatched signal/multiproc by
-    thread). Per-LLM-call HTTP timeout is configured on the OpenAI client
-    (see ``src/architectures/utils.py``).
-    **Never raises** — all errors are captured in QuestionResult.error so
-    that one bad question cannot crash the worker or lose batch progress.
+    Args:
+        config: Experiment configuration.
+        query: Per-query record (`{query_id, question,
+            correct_answer, target_answer?, gold_doc_ids?}`).
+        qa_system: Pre-instantiated `QASystem` subclass matching
+            `config.architecture`.
+        question_num: 1-indexed position of this query within the
+            batch, used for log tags.
+        batch_size: Total number of queries in the batch, used for
+            log tags.
+
+    Returns:
+        A `QuestionResult` either on the success path or with
+        `error` populated.
+
+    Notes:
+        Function name kept as `run_single_question` (rather than
+        `run_single_query`) because it's referenced from Modal log
+        history and downstream scripts; renaming would cascade —
+        see CONVENTIONS.md.
     """
     query_id: str = query['query_id']
     question_text: str = query['question']
@@ -494,23 +669,43 @@ def run_question_batch(
     results_dir: str,  # Root results directory (e.g. /vol/results)
     modal_volume=None,  # Optional Modal Volume — reload before / commit after each query
 ) -> dict:
-    """Process a batch of queries for one experiment.
+    """Process a batch of queries for one experiment, with checkpointing.
 
-    Function name kept as ``run_question_batch`` (rather than
-    ``run_query_batch``) for stability — it is referenced by Modal log
-    history and downstream scripts.
+    Called by each Modal worker container. Resources (`VectorStore`,
+    `QASystem`) are loaded once per container, then queries are
+    processed sequentially with per-query JSON writes so that
+    partial progress survives container preemption.
 
-    Called by each of the 99 Modal worker containers.  Resources (VectorStore,
-    QASystem) are loaded once per container, then queries are processed
-    sequentially with immediate per-query JSON writes for checkpointing.
+    When `modal_volume` is provided, the volume is reloaded before
+    each query (to see results committed by other workers / retried
+    attempts) and committed after each write (so partial progress
+    is durable).
 
-    If *modal_volume* is provided, ``volume.reload()`` is called before each
-    query (to see results committed by other workers / retried attempts)
-    and ``volume.commit()`` is called after each write (so partial progress
-    survives preemption).
+    Existing successful result files are skipped; existing error
+    files are deleted and retried on the next pass; corrupt files
+    are deleted and retried.
+
+    Args:
+        config: Experiment configuration.
+        query_ids: Subset of query IDs this worker should process.
+        queries: Map from `query_id` to its full per-query record.
+            Records missing from this dict are recorded as errors
+            rather than crashing the batch.
+        results_dir: Root results directory (e.g. `/vol/results/`).
+            One subdirectory per `experiment_id` is created
+            underneath.
+        modal_volume: Optional Modal Volume; when provided, reload
+            and commit calls bracket each per-query write.
 
     Returns:
-        {"completed": int, "skipped": int, "errors": int, "total": int}
+        Counts dict with keys `completed`, `skipped`, `errors`, and
+        `total`.
+
+    Notes:
+        Function name kept as `run_question_batch` (rather than
+        `run_query_batch`) because it's referenced from Modal log
+        history and downstream scripts; renaming would cascade —
+        see CONVENTIONS.md.
     """
     exp_dir = os.path.join(results_dir, config.experiment_id)
     os.makedirs(exp_dir, exist_ok=True)

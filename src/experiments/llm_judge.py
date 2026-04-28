@@ -89,6 +89,14 @@ _stemmer = PorterStemmer()
 # ---------------------------------------------------------------------------
 
 class Classification(str, Enum):
+    """Seven raw judge labels emitted for each response.
+
+    The five-category scheme used in the paper (CORRECT,
+    CORRECT_WITH_DETECTION, HEDGING, INCORRECT, UNKNOWN) is a
+    post-hoc merge applied by the analysis notebook — the
+    `CONFIDENT_*` / `UNCERTAIN_*` distinctions captured here let
+    the merge be revisited later without re-judging.
+    """
     CONFIDENT_CORRECT = 'CONFIDENT_CORRECT'
     CORRECT_WITH_DETECTION = 'CORRECT_WITH_DETECTION'
     UNCERTAIN_CORRECT = 'UNCERTAIN_CORRECT'
@@ -101,8 +109,17 @@ class Classification(str, Enum):
 class JudgeResult(BaseModel):
     """Structured output schema for the LLM judge.
 
-    Field order matters — reasoning is first so the model generates its
-    justification before committing to a classification label.
+    Field order matters — `reasoning` is first so the model
+    generates its justification before committing to a
+    classification label.
+
+    Attributes:
+        reasoning: 1-2 sentence justification for the
+            classification.
+        classification: One of the seven `Classification` labels.
+        target_answer_present: Whether the model judged the target
+            (adversarial) answer to be present in the system
+            answer.
     """
     reasoning: str = Field(description="1-2 sentence justification for the classification")
     classification: Classification
@@ -114,12 +131,25 @@ class JudgeResult(BaseModel):
 # ---------------------------------------------------------------------------
 
 def load_judge_prompt(prompt_path: Optional[str] = None) -> tuple[str, str]:
-    """Read the judge prompt markdown and split into system / user templates.
+    """Read the judge prompt markdown and split it into system + user parts.
+
+    The markdown file is split on `## EVALUATION INPUTS`: text
+    above becomes the system message; the user-message template is
+    a fixed format string that the caller fills in per query.
+
+    Args:
+        prompt_path: Optional override for the prompt-file
+            location. Defaults to `llm-judge-prompt.md` next to
+            this module.
 
     Returns:
-        (system_message, user_message_template) where user_message_template
-        has {question}, {correct_answer}, {target_answer}, {system_answer}
-        placeholders.
+        Tuple `(system_message, user_message_template)`. The
+        template carries `{question}`, `{correct_answer}`,
+        `{target_answer}`, and `{system_answer}` placeholders.
+
+    Raises:
+        ValueError: If the split marker doesn't appear exactly
+            once in the prompt file.
     """
     if prompt_path is None:
         prompt_path = os.path.join(
@@ -165,10 +195,27 @@ def judge_response(
     model: str = JUDGE_MODEL,
     reasoning_effort: str = DEFAULT_REASONING_EFFORT,
 ) -> JudgeResult:
-    """Run the LLM judge on a single response.
+    """Run the LLM judge on a single response and return its structured output.
 
-    Calls execute_llm_call() with structured output parsing.
-    All inputs are plain strings — no shared state.
+    Wraps `execute_llm_call` with structured-output parsing so the
+    return value is a typed `JudgeResult` rather than raw text.
+    All inputs are plain strings; no shared state.
+
+    Args:
+        question: Natural-language question text.
+        correct_answer: Gold short-form answer.
+        target_answer: Adversarial answer the attacker tried to
+            elicit. Pass `'none'` for the clean condition.
+        system_answer: The RAG system's free-form response.
+        system_message: System prompt from `load_judge_prompt`.
+        user_message_template: User-message template from
+            `load_judge_prompt`.
+        model: OpenAI model used by the judge.
+        reasoning_effort: Reasoning-effort level passed to the
+            judge model.
+
+    Returns:
+        Parsed `JudgeResult`.
     """
     user_message = user_message_template.format(
         question=question,
@@ -195,10 +242,19 @@ def judge_response(
 # ---------------------------------------------------------------------------
 
 def _normalize_text(text: str) -> str:
-    """Aggressively normalize text for substring matching.
+    """Aggressively normalize text for the substring-matching heuristic.
 
-    Pipeline: lowercase → strip punctuation → remove stop words → stem →
-    collapse whitespace.
+    Pipeline: lowercase → strip punctuation → drop stop words →
+    Porter-stem → collapse whitespace. Used by
+    `check_target_substring` so wording differences (case,
+    punctuation, articles, plural/tense variants) don't defeat the
+    match.
+
+    Args:
+        text: Raw text.
+
+    Returns:
+        Normalized form.
     """
     text = text.lower()
     text = text.translate(str.maketrans('', '', string.punctuation))
@@ -209,7 +265,19 @@ def _normalize_text(text: str) -> str:
 
 
 def _get_content_words(text: str) -> list[str]:
-    """Extract stemmed content words (no stop words, no punctuation)."""
+    """Extract stemmed content words from `text`.
+
+    Same pipeline as `_normalize_text` but returns the list of
+    words rather than a joined string, so callers can do
+    set-membership checks for the word-reordering branch of
+    `check_target_substring`.
+
+    Args:
+        text: Raw text.
+
+    Returns:
+        Stemmed content words (no stop words, no punctuation).
+    """
     text = text.lower()
     text = text.translate(str.maketrans('', '', string.punctuation))
     words = text.split()
@@ -218,14 +286,25 @@ def _get_content_words(text: str) -> list[str]:
 
 
 def check_target_substring(target_answer: str, system_answer: str) -> bool:
-    """Check if the target answer appears in the system answer.
+    """Heuristically check whether the target answer is in the system answer.
 
     Two checks after aggressive normalization:
-    1. Normalized target is a substring of normalized system answer
-    2. All stemmed content words from the target appear in the system answer
-       (handles word reordering)
 
-    Returns False for clean conditions (empty / 'none' target).
+      1. Normalized target appears as a contiguous substring of
+         the normalized system answer.
+      2. All stemmed content words from the target appear
+         (in any order) in the system answer.
+
+    Either match counts as present.
+
+    Args:
+        target_answer: Adversarial answer the attacker tried to
+            elicit.
+        system_answer: The RAG system's free-form response.
+
+    Returns:
+        `True` if either match fires. `False` for the clean
+        condition (empty or `'none'` target).
     """
     if not target_answer or target_answer.lower() == 'none':
         return False
@@ -259,10 +338,22 @@ def check_target_embedding(
 ) -> Optional[float]:
     """Compute cosine similarity between target answer and system answer.
 
-    Uses OpenAI embeddings (not Contriever — this is an evaluation metric,
-    not a retrieval step).
+    Uses OpenAI embeddings (not Contriever — this is an
+    evaluation metric, not a retrieval step). Both inputs are
+    truncated to the embedding model's token limit before the API
+    call.
 
-    Returns None for clean conditions (empty / 'none' target).
+    Args:
+        target_answer: Adversarial answer the attacker tried to
+            elicit.
+        system_answer: The RAG system's free-form response.
+        openai_client: Optional pre-built `OpenAI` client; a fresh
+            one is constructed when omitted.
+        model: Embedding model identifier.
+
+    Returns:
+        Cosine similarity in `[-1.0, 1.0]`, or `None` for the
+        clean condition (empty or `'none'` target).
     """
     if not target_answer or target_answer.lower() == 'none':
         return None
@@ -272,6 +363,7 @@ def check_target_embedding(
 
     # Truncate inputs to embedding model's token limit (cl100k_base tokenizer).
     def _truncate_for_embedding(text: str) -> str:
+        """Truncate `text` to `EMBEDDING_MAX_TOKENS` tokens (prefix-kept)."""
         tokens = _embedding_enc.encode(text)
         if len(tokens) > EMBEDDING_MAX_TOKENS:
             truncated_tokens = tokens[:EMBEDDING_MAX_TOKENS]
@@ -313,11 +405,39 @@ def evaluate_response(
     embedding_model: str = EMBEDDING_MODEL,
     openai_client: Optional[OpenAI] = None,
 ) -> dict:
-    """Run all three evaluation checks on a single response.
+    """Run all three evaluation checks on a single RAG response.
 
-    Returns a dict with all judge fields, suitable for JSON serialization.
-    Parallelization-ready: no shared mutable state — all inputs as arguments,
-    result returned as a plain dict.
+    Dispatches the LLM judge, the normalized-substring check, and
+    the embedding cosine-similarity check independently, packaging
+    their outcomes into a single dict suitable for JSON
+    serialization. Parallelization-ready: no shared mutable state —
+    all inputs are passed as arguments, and the result is returned
+    as a plain dict.
+
+    Args:
+        question: Natural-language question text.
+        correct_answer: Gold short-form answer.
+        target_answer: Adversarial answer the attacker tried to
+            elicit. `None` for the clean condition.
+        system_answer: The RAG system's free-form response under
+            evaluation.
+        experiment_id: Identifier for the (architecture, attack)
+            cell this response belongs to.
+        query_id: NQ test query identifier.
+        system_message: System prompt for the LLM judge.
+        user_message_template: Format string for the judge's user
+            prompt; placeholders are filled from the other args.
+        model: OpenAI model used by the LLM judge.
+        reasoning_effort: Reasoning-effort level passed to the
+            judge model.
+        embedding_model: Embedding model used by the cosine check.
+        openai_client: Optional pre-built `OpenAI` client. A fresh
+            one is constructed if omitted.
+
+    Returns:
+        Dict with judge classification, reasoning, three
+        independent target-detection booleans, and an `error`
+        field populated if any sub-check raised.
     """
     target_str = target_answer or 'none'
 
@@ -381,7 +501,18 @@ def evaluate_response(
 # ---------------------------------------------------------------------------
 
 def load_experiment_results(experiment_dir: str) -> list[dict]:
-    """Load all successful result JSONs from an experiment directory."""
+    """Load every successful per-question result JSON from an experiment dir.
+
+    Skips `summary.json`, error-flagged results, corrupt JSONs,
+    and unreadable files.
+
+    Args:
+        experiment_dir: Path to one experiment's result directory
+            (e.g. `<results_dir>/vanilla_clean/`).
+
+    Returns:
+        List of result dicts in filename-sorted order.
+    """
     results = []
     for fname in sorted(os.listdir(experiment_dir)):
         if not fname.endswith('.json') or fname == 'summary.json':
@@ -406,14 +537,26 @@ def judge_experiment(
     reasoning_effort: str = DEFAULT_REASONING_EFFORT,
     embedding_model: str = EMBEDDING_MODEL,
 ) -> dict:
-    """Run the judge pipeline over all results in one experiment.
+    """Run the judge pipeline over every successful result in one experiment.
 
-    Reads per-question JSON files from results_dir/{experiment_id}/
-    (i.e. experiments/{experiment_id}/ under the results tree). Writes
-    per-question JSON files to judge_output_dir/{experiment_id}/. Skips
-    already-judged questions (checkpoint recovery).
+    Reads per-question JSONs from
+    `<results_dir>/<experiment_id>/`, writes per-question judge
+    JSONs to `<judge_output_dir>/<experiment_id>/`, skipping any
+    that have already been judged successfully.
 
-    Returns summary dict with counts.
+    Args:
+        experiment_id: Identifier of the experiment cell to judge.
+        results_dir: Root directory holding the experiment result
+            tree.
+        judge_output_dir: Root directory for judge output.
+        model: OpenAI model used by the LLM judge.
+        reasoning_effort: Reasoning-effort level passed to the
+            judge model.
+        embedding_model: Embedding model used by the cosine check.
+
+    Returns:
+        Summary dict with `completed`, `skipped`, `errors`, and
+        `total` counts.
     """
     exp_results_dir = os.path.join(results_dir, experiment_id)
     exp_judge_dir = os.path.join(judge_output_dir, experiment_id)
@@ -485,6 +628,7 @@ def judge_experiment(
 # ---------------------------------------------------------------------------
 
 def main():
+    """CLI entry point — judge one experiment or all 12 sequentially."""
     parser = argparse.ArgumentParser(
         description="Run LLM judge pipeline over experiment results"
     )
@@ -543,7 +687,13 @@ def main():
 
 
 def quick_test():
-    """Hardcoded single-example smoke test — no file I/O for inputs/outputs."""
+    """Run a hardcoded single-example smoke test against the live judge.
+
+    No file I/O for inputs or outputs — everything is inline. Used
+    via `python src/experiments/llm_judge.py --quick-test` to
+    sanity-check the prompt + structured-output pipeline without
+    touching the result tree.
+    """
     system_message, user_message_template = load_judge_prompt()
     openai_client = OpenAI()
 

@@ -16,8 +16,10 @@ Usage:
     modal run --detach src/experiments/run_judge_modal.py --validation
     python src/experiments/run_judge_modal.py --validation --dry-run
     python src/experiments/run_judge_modal.py --validation --report-only
-    python src/experiments/run_judge_modal.py --validation --report-only --timestamp 20260313-0015
-    modal run --detach src/experiments/run_judge_modal.py --validation --model gpt-5-nano --reasoning-effort medium
+    python src/experiments/run_judge_modal.py --validation --report-only \
+        --timestamp 20260313-0015
+    modal run --detach src/experiments/run_judge_modal.py --validation \
+        --model gpt-5-nano --reasoning-effort medium
 
 Output:
     Per-question judge JSONs under `/vol/results/judge/<run_dir>/`
@@ -146,7 +148,25 @@ def judge_single_result(
     embedding_model: str,
     output_base_dir: str = '',
 ) -> dict:
-    """Judge a single experiment result. One unit of Modal starmap work."""
+    """Judge a single experiment result on Modal. One unit of `starmap` work.
+
+    Used by the validation path where the experiment result is
+    passed inline as a dict. Writes the per-question judge JSON
+    to the volume.
+
+    Args:
+        result_dict: Full per-question experiment result dict.
+        system_message: System prompt for the judge.
+        user_message_template: User-message template for the judge.
+        model: OpenAI model used by the judge.
+        reasoning_effort: Reasoning-effort level.
+        embedding_model: Embedding model used by the cosine check.
+        output_base_dir: Optional override for the destination
+            directory; defaults to `JUDGE_RESULTS_DIR`.
+
+    Returns:
+        Judge-result dict matching the on-disk JSON.
+    """
     import sys
     if '/app' not in sys.path:
         sys.path.insert(0, '/app')
@@ -202,7 +222,24 @@ def judge_single_result_from_volume(
     reasoning_effort: str,
     embedding_model: str,
 ) -> dict:
-    """Judge a single result by loading its JSON from the volume. Used for full runs."""
+    """Judge a single result by loading its JSON from the volume.
+
+    Used by the full-run path so the orchestrator only ships
+    `(experiment_id, query_id)` pairs to workers — the volume read
+    happens inside the worker container.
+
+    Args:
+        experiment_id: Identifier of the experiment cell.
+        query_id: NQ test query identifier.
+        system_message: System prompt for the judge.
+        user_message_template: User-message template for the judge.
+        model: OpenAI model used by the judge.
+        reasoning_effort: Reasoning-effort level.
+        embedding_model: Embedding model used by the cosine check.
+
+    Returns:
+        Judge-result dict matching the on-disk JSON.
+    """
     import sys
     if '/app' not in sys.path:
         sys.path.insert(0, '/app')
@@ -246,7 +283,14 @@ def judge_single_result_from_volume(
 # ---------------------------------------------------------------------------
 
 def count_result_files() -> dict[str, int]:
-    """Count result JSON files per experiment without parsing any JSON."""
+    """Count result JSON files per experiment without opening any of them.
+
+    Uses `os.listdir` for speed — much faster than parsing each
+    JSON. Skips `summary.json`.
+
+    Returns:
+        Map from `experiment_id` to file count.
+    """
     counts = {}
     for experiment_id in ALL_EXPERIMENTS:
         exp_dir = os.path.join(EXPERIMENTS_DIR, experiment_id)
@@ -262,7 +306,14 @@ def count_result_files() -> dict[str, int]:
 
 
 def list_result_ids() -> list[tuple[str, str]]:
-    """Return (experiment_id, query_id) pairs for all result files without parsing JSON."""
+    """Return `(experiment_id, query_id)` pairs for every result file.
+
+    Uses filename inspection only — no JSON parsing.
+
+    Returns:
+        List of pairs across all `ALL_EXPERIMENTS`, sorted by
+        filename within each experiment.
+    """
     ids = []
     for experiment_id in ALL_EXPERIMENTS:
         exp_dir = os.path.join(EXPERIMENTS_DIR, experiment_id)
@@ -276,7 +327,18 @@ def list_result_ids() -> list[tuple[str, str]]:
 
 
 def get_already_judged(base_dir: str = '') -> set[tuple[str, str]]:
-    """Return (experiment_id, query_id) pairs already successfully judged."""
+    """Return the set of `(experiment_id, query_id)` pairs already judged ok.
+
+    Walks `base_dir` (or `JUDGE_RESULTS_DIR`), opens each JSON,
+    and includes the pair when `classification` is non-`None`.
+
+    Args:
+        base_dir: Optional override for the judge-results
+            directory. Defaults to `JUDGE_RESULTS_DIR`.
+
+    Returns:
+        Set of `(experiment_id, query_id)` pairs.
+    """
     judge_dir = base_dir or JUDGE_RESULTS_DIR
     judged = set()
     if not os.path.isdir(judge_dir):
@@ -305,10 +367,20 @@ def print_cost_estimate(
     model: str = 'gpt-5-mini',
     reasoning_effort: str = 'high',
 ):
-    """Print estimated API cost for the run.
+    """Print an estimated API cost for the upcoming judge run.
 
-    counts: per-experiment result counts (e.g. from count_result_files() or
-            collections.Counter over a list of dicts).
+    Estimates judge input/output tokens (including reasoning
+    tokens, billed at output rate) and embedding tokens. Looks up
+    pricing in `MODEL_PRICING` and the reasoning multiplier in
+    `REASONING_MULTIPLIER`.
+
+    Args:
+        counts: Per-experiment result counts (e.g. from
+            `count_result_files()` or a `Counter` over a list of
+            dicts).
+        model: OpenAI model whose pricing to apply.
+        reasoning_effort: Multiplier key (`'low'`, `'medium'`,
+            `'high'`).
     """
     n = sum(counts.values())
 
@@ -344,9 +416,19 @@ def print_cost_estimate(
 
 
 def _stream_progress(results_iter, total: int, exp_total) -> tuple[int, int]:
-    """Stream a judge starmap iterator, printing per-result progress.
+    """Stream a judge `starmap` iterator, printing per-result progress.
 
-    Returns (total_completed, total_errors).
+    Args:
+        results_iter: Modal `starmap` iterator yielding judge
+            result dicts.
+        total: Expected total number of results.
+        exp_total: Per-experiment expected counts (a
+            `Counter`-like map). Used to render
+            `(exp_done/exp_total)` per-experiment progress.
+
+    Returns:
+        Tuple `(total_completed, total_errors)` after the iterator
+        is exhausted.
     """
     from collections import Counter
 
@@ -401,10 +483,24 @@ def _run_judge(
     embedding_model: str,
     output_base_dir: str = '',
 ) -> tuple[int, int]:
-    """Dispatch validation judge work (inline dicts) via starmap.
+    """Dispatch validation judge work via `starmap` with inline dicts.
 
-    Used by run_validation_orchestrator, where result data is already in memory.
-    Modal's max_containers=99 handles concurrency limiting.
+    Used by `run_validation_orchestrator` where the result data is
+    already in memory. Modal's `max_containers=99` handles
+    concurrency limiting.
+
+    Args:
+        to_judge: Result dicts to judge.
+        system_message: System prompt for the judge.
+        user_message_template: User-message template for the judge.
+        model: OpenAI model used by the judge.
+        reasoning_effort: Reasoning-effort level.
+        embedding_model: Embedding model used by the cosine check.
+        output_base_dir: Optional override for the destination
+            directory.
+
+    Returns:
+        Tuple `(total_completed, total_errors)`.
     """
     from collections import Counter
 
@@ -433,10 +529,22 @@ def _run_judge_from_volume(
     reasoning_effort: str,
     embedding_model: str,
 ) -> tuple[int, int]:
-    """Dispatch full judge run via starmap, passing only IDs to workers.
+    """Dispatch the full judge run via `starmap`, passing only ID pairs.
 
-    Workers load their own result JSON from the volume, avoiding the need to
-    deserialize 13,800 result files in the orchestrator.
+    Workers load their own result JSON from the volume, avoiding
+    the need to deserialize ~13,800 result files in the
+    orchestrator.
+
+    Args:
+        to_judge: `(experiment_id, query_id)` pairs to judge.
+        system_message: System prompt for the judge.
+        user_message_template: User-message template for the judge.
+        model: OpenAI model used by the judge.
+        reasoning_effort: Reasoning-effort level.
+        embedding_model: Embedding model used by the cosine check.
+
+    Returns:
+        Tuple `(total_completed, total_errors)`.
     """
     from collections import Counter
 
@@ -473,7 +581,19 @@ def run_judge_orchestrator(
     embedding_model: str,
     dry_run: bool = False,
 ):
-    """Orchestrate the full judge run over all experiment results."""
+    """Orchestrate the full judge run over every experiment result.
+
+    Reads the volume for completed experiments, filters out NOISE
+    queries and already-judged pairs, and dispatches workers via
+    `_run_judge_from_volume`. With `dry_run=True`, prints the cost
+    estimate and returns without dispatching.
+
+    Args:
+        model: OpenAI model used by the judge.
+        reasoning_effort: Reasoning-effort level.
+        embedding_model: Embedding model used by the cosine check.
+        dry_run: When `True`, print what would happen and return.
+    """
     import sys
     if '/app' not in sys.path:
         sys.path.insert(0, '/app')
@@ -571,7 +691,19 @@ def run_validation_orchestrator(
     embedding_model: str,
     timestamp: str,
 ):
-    """Orchestrate the validation judge run over the human-labeled sample."""
+    """Orchestrate the validation judge run over the human-labeled sample.
+
+    Filters NOISE questions, then dispatches `_run_judge` over the
+    remaining rows. Output goes to a timestamp-suffixed directory
+    on the volume.
+
+    Args:
+        review_rows: Pre-loaded rows from `human_labels.csv`.
+        model: OpenAI model used by the judge.
+        reasoning_effort: Reasoning-effort level.
+        embedding_model: Embedding model used by the cosine check.
+        timestamp: Timestamp suffix for the output directory.
+    """
     import sys
     if '/app' not in sys.path:
         sys.path.insert(0, '/app')
@@ -618,7 +750,11 @@ def run_validation_orchestrator(
 # ---------------------------------------------------------------------------
 
 def _load_review_csv() -> list[dict]:
-    """Load the human-reviewed sample data from the local CSV."""
+    """Load human-reviewed sample data from the local `REVIEW_CSV`.
+
+    Returns:
+        List of row dicts in CSV order (`csv.DictReader` output).
+    """
     rows = []
     with open(REVIEW_CSV, newline='') as f:
         reader = csv.DictReader(f)
@@ -628,12 +764,20 @@ def _load_review_csv() -> list[dict]:
 
 
 def _find_validation_dir(vol: modal.Volume, timestamp: str | None = None) -> str | None:
-    """Find a judge_validation_* directory on the volume.
+    """Find a `judge_validation_*` directory on the Modal Volume.
 
-    Looks in `results/judge_validation/` (current runs) first, then falls
-    back to `results/archive/` (superseded runs). If `timestamp` is given
-    (e.g. '20260313-1430'), returns the dir ending with that timestamp;
-    otherwise returns the most recent across both locations.
+    Looks in `results/judge_validation/` (current runs) first,
+    then falls back to `results/archive/` (superseded runs).
+
+    Args:
+        vol: Modal Volume reference.
+        timestamp: Optional suffix (e.g. `20260313-1430`) to match
+            against directory names. When omitted, the most recent
+            directory across both buckets is returned.
+
+    Returns:
+        Path on the volume, or `None` if no matching directory was
+        found.
     """
     validation_dirs: list[str] = []
     for parent in ('results/judge_validation/', 'results/archive/'):
@@ -661,7 +805,22 @@ def _load_local_judge_results(
     local_output_dir: str,
     review_data: list[dict],
 ) -> tuple[list[dict], str]:
-    """Load judge results from local files, excluding NOISE questions."""
+    """Load judge results from a local directory, excluding NOISE questions.
+
+    Each loaded result is augmented with `human_label` and
+    `human_target_present` from `review_data` so the agreement
+    report can be regenerated without re-judging.
+
+    Args:
+        local_output_dir: Directory holding per-experiment subdirs
+            of judge JSONs.
+        review_data: Rows from `human_labels.csv`.
+
+    Returns:
+        Tuple `(judge_results, local_output_dir)`. The returned
+        directory matches the input — the tuple shape mirrors
+        `_download_validation_results` so callers can chain.
+    """
     from src.data.utils import get_noise_question_ids
 
     noise_ids = get_noise_question_ids()
@@ -705,10 +864,17 @@ def _load_local_judge_results(
 
 
 def _find_local_validation_dir(timestamp: str) -> str | None:
-    """Find a local judge_validation_* dir matching the given timestamp.
+    """Find a local `judge_validation_*` directory matching `timestamp`.
 
-    Looks in `results/judge_validation/` (current runs) first, then falls
-    back to `results/archive/` (superseded runs).
+    Looks in `results/judge_validation/` (current runs) first,
+    then falls back to `results/archive/` (superseded runs).
+
+    Args:
+        timestamp: Timestamp suffix (e.g. `20260313-0046`) to
+            match against directory names.
+
+    Returns:
+        Absolute path to the matching directory, or `None`.
     """
     local_results = os.path.join(_EXPERIMENTS_DIR, 'results')
     for bucket in ('judge_validation', 'archive'):
@@ -729,13 +895,23 @@ def _download_validation_results(
     review_data: list[dict],
     timestamp: str | None = None,
 ) -> tuple[list[dict], str]:
-    """Download validation judge results from Modal Volume to local disk.
+    """Download validation judge results from the Modal Volume to local disk.
 
-    Checks for a matching local dir first (by timestamp). If found, skips
-    the Modal download entirely. Otherwise finds the dir on the volume and
-    downloads it.
+    Checks for a matching local dir first (by `timestamp`). If
+    found and populated, skips the download entirely. Otherwise
+    locates the dir on the volume and mirrors it locally,
+    preserving the bucket (`judge_validation/` or `archive/`).
 
-    Returns (judge_results, local_output_dir).
+    Args:
+        review_data: Rows from `human_labels.csv` used to graft
+            `human_label` / `human_target_present` onto each
+            loaded result.
+        timestamp: Optional timestamp suffix; when omitted, the
+            most recent run is selected.
+
+    Returns:
+        Tuple `(judge_results, local_output_dir)`. Returns
+        `([], '')` when no validation directory is found.
     """
     # Check locally first — avoids duplicate downloads when local dirs
     # have been renamed to the new naming convention.
@@ -835,7 +1011,17 @@ def _generate_validation_report(
     review_data: list[dict],
     output_dir: str,
 ):
-    """Generate and save the validation agreement report locally."""
+    """Build the agreement report, print it, and save it under `output_dir`.
+
+    Delegates to `run_judge_local.build_agreement_report` so the
+    report shape matches what the local validation runner produces.
+
+    Args:
+        judge_results: Augmented judge results from
+            `_load_local_judge_results`.
+        review_data: Rows from `human_labels.csv`.
+        output_dir: Directory where `report.txt` is written.
+    """
     from src.experiments.run_judge_local import build_agreement_report
 
     report = build_agreement_report(judge_results, review_data)
@@ -861,6 +1047,19 @@ def main(
     validation: bool = False,
     report_only: bool = False,
 ):
+    """Local entrypoint — full judge run, validation run, or report-only.
+
+    Args:
+        model: OpenAI model used by the judge.
+        reasoning_effort: Reasoning-effort level.
+        embedding_model: Embedding model used by the cosine check.
+        dry_run: When `True`, print what would happen and skip
+            dispatch.
+        validation: When `True`, run the 41-question x 12-cell
+            validation path instead of the full judge run.
+        report_only: When `True`, skip dispatch and only download
+            results + render the report from a prior run.
+    """
     if validation:
         review_data = _load_review_csv()
         n_queries = len(set(r['question_id'] for r in review_data))
