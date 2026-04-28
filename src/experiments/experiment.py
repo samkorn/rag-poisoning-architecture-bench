@@ -8,7 +8,7 @@ Defines:
   - QuestionResult: result for a single question within an experiment
   - run_single_question(): atomic unit of work (one question, one architecture)
   - run_question_batch(): batch processor with per-question checkpointing
-  - split_questions(): utility for dividing work across workers
+  - split_query_ids(): utility for dividing work across workers
 
 This module is pure Python (no Modal dependency). It is imported by the
 orchestrator's Modal worker function.
@@ -76,8 +76,8 @@ class QuestionResult:
     """Result for a single question within an experiment."""
 
     experiment_id: str
-    question_id: str  # e.g. "test0", "test3451"
-    question_text: str
+    question_id: str  # query_id (on-disk schema field name preserved)
+    question_text: str  # the natural-language question text
     correct_answer: str
     target_answer: Optional[str]  # Attacker's desired wrong answer (None for clean)
 
@@ -165,14 +165,14 @@ def detect_gold_in_results(
             if doc['doc_id'] in gold_set]
 
 
-def split_questions(question_ids: list[str], n_workers: int = 99) -> list[list[str]]:
-    """Split question IDs into *n_workers* roughly-equal batches (round-robin).
+def split_query_ids(query_ids: list[str], n_workers: int = 99) -> list[list[str]]:
+    """Split query IDs into *n_workers* roughly-equal batches (round-robin).
 
-    ~1150 / 99 ~ 11-12 questions per worker.
+    ~1150 / 99 ~ 11-12 queries per worker.
     """
     batches: list[list[str]] = [[] for _ in range(n_workers)]
-    for i, qid in enumerate(question_ids):
-        batches[i % n_workers].append(qid)
+    for i, query_id in enumerate(query_ids):
+        batches[i % n_workers].append(query_id)
     return [b for b in batches if b]
 
 
@@ -283,7 +283,7 @@ def create_qa_system(config: ExperimentConfig):
 
 def _run_single_question(
     config: ExperimentConfig,
-    question: dict,
+    query: dict,
     qa_system,
     log_tag: str,
 ) -> QuestionResult:
@@ -297,11 +297,11 @@ def _run_single_question(
 
     Raises on failure — caller (run_single_question) catches and records errors.
     """
-    query_id: str = question['query_id']
-    question_text: str = question['question']
-    correct_answer: str = question.get('correct_answer', '')
+    query_id: str = query['query_id']
+    question_text: str = query['question']
+    correct_answer: str = query.get('correct_answer', '')
     target_answer: Optional[str] = (
-        question.get('target_answer') if config.attack_type != 'clean' else None
+        query.get('target_answer') if config.attack_type != 'clean' else None
     )
 
     # --- Run architecture with retrieval capture ------------------------
@@ -328,7 +328,7 @@ def _run_single_question(
         )
 
     # Gold-standard document detection in initial retrieval.
-    gold_doc_ids: list[str] = question.get('gold_doc_ids', [])
+    gold_doc_ids: list[str] = query.get('gold_doc_ids', [])
     gold_doc_ranks: list[int] = []
     if gold_doc_ids and primary_results:
         gold_doc_ranks = detect_gold_in_results(
@@ -416,7 +416,7 @@ _run_single_question_retry_thread_timed = retry(
 
 def run_single_question(
     config: ExperimentConfig,
-    question: dict,  # {_id, text, answer, target_answer?, ...}
+    query: dict,  # {query_id, question, correct_answer, target_answer?, gold_doc_ids?}
     qa_system,  # Pre-instantiated QASystem subclass
     question_num: Optional[int] = None,
     batch_size: Optional[int] = None,
@@ -430,11 +430,11 @@ def run_single_question(
     **Never raises** — all errors are captured in QuestionResult.error so
     that one bad question cannot crash the worker or lose batch progress.
     """
-    query_id: str = question['query_id']
-    question_text: str = question['question']
-    correct_answer: str = question.get('correct_answer', '')
+    query_id: str = query['query_id']
+    question_text: str = query['question']
+    correct_answer: str = query.get('correct_answer', '')
     target_answer: Optional[str] = (
-        question.get('target_answer')
+        query.get('target_answer')
         if config.attack_type != 'clean'
         else None
     )
@@ -447,7 +447,7 @@ def run_single_question(
             if threading.current_thread() is threading.main_thread()
             else _run_single_question_retry_thread_timed
         )
-        return _run_single_question_retry_timed(config, question, qa_system, log_tag)
+        return _run_single_question_retry_timed(config, query, qa_system, log_tag)
     except Exception as e:
         print(f"{log_tag} ERROR: {type(e).__name__}: {e}")
         return QuestionResult(
@@ -467,19 +467,19 @@ def run_single_question(
 
 def run_question_batch(
     config: ExperimentConfig,
-    question_ids: list[str],
-    questions: dict[str, dict],  # query_id -> question dict
+    query_ids: list[str],
+    queries: dict[str, dict],  # query_id -> query record
     results_dir: str,  # Root results directory (e.g. /vol/results)
-    modal_volume=None,  # Optional Modal Volume — reload before / commit after each question
+    modal_volume=None,  # Optional Modal Volume — reload before / commit after each query
 ) -> dict:
-    """Process a batch of questions for one experiment.
+    """Process a batch of queries for one experiment.
 
     Called by each of the 99 Modal worker containers.  Resources (VectorStore,
-    QASystem) are loaded once per container, then questions are processed
-    sequentially with immediate per-question JSON writes for checkpointing.
+    QASystem) are loaded once per container, then queries are processed
+    sequentially with immediate per-query JSON writes for checkpointing.
 
     If *modal_volume* is provided, ``volume.reload()`` is called before each
-    question (to see results committed by other workers / retried attempts)
+    query (to see results committed by other workers / retried attempts)
     and ``volume.commit()`` is called after each write (so partial progress
     survives preemption).
 
@@ -502,9 +502,9 @@ def run_question_batch(
     completed = 0
     skipped = 0
     errors = 0
-    batch_size = len(question_ids)
+    batch_size = len(query_ids)
 
-    for q_idx, query_id in enumerate(question_ids, 1):
+    for q_idx, query_id in enumerate(query_ids, 1):
         log_tag = make_log_tag(config, query_id, q_idx, batch_size)
         result_path = os.path.join(exp_dir, f'{query_id}.json')
 
@@ -512,7 +512,7 @@ def run_question_batch(
         if modal_volume is not None:
             modal_volume.reload()
 
-        # --- Checkpoint: skip already-completed questions ---
+        # --- Checkpoint: skip already-completed queries ---
         # Only skip if the result file exists AND contains a successful result.
         # Error results (from previous rate-limit failures etc.) are deleted
         # so they get retried on the next run.
@@ -522,7 +522,7 @@ def run_question_batch(
                     _prev = json.loads(_f.read())
                 if _prev.get('error') is None:
                     skipped += 1
-                    print(f"{log_tag} Skipping already completed question")
+                    print(f"{log_tag} Skipping already completed query")
                     continue
                 # Previous result was an error — delete and retry.
                 print(f"{log_tag} Deleting errored result file and retrying...")
@@ -532,10 +532,10 @@ def run_question_batch(
                 print(f"{log_tag} Deleting corrupt result file and retrying...")
                 os.remove(result_path)
 
-        question = questions.get(query_id)
-        if question is None:
-            # Missing question — record error and continue
-            print(f"{log_tag} Missing question in questions dict - recording error")
+        query = queries.get(query_id)
+        if query is None:
+            # Missing query — record error and continue
+            print(f"{log_tag} Missing query in queries dict - recording error")
             errors += 1
             err_result = QuestionResult(
                 experiment_id=config.experiment_id,
@@ -544,7 +544,7 @@ def run_question_batch(
                 correct_answer='',
                 target_answer=None,
                 system_answer='',
-                error=f"Question ID {query_id!r} not found in questions dict",
+                error=f"Query ID {query_id!r} not found in queries dict",
             )
             with open(result_path, 'w') as f:
                 f.write(err_result.to_json())
@@ -552,9 +552,9 @@ def run_question_batch(
                 modal_volume.commit()
             continue
 
-        result = run_single_question(config, question, qa_system, q_idx, batch_size)
+        result = run_single_question(config, query, qa_system, q_idx, batch_size)
 
-        # Write immediately — per-question checkpoint
+        # Write immediately — per-query checkpoint
         with open(result_path, 'w') as f:
             f.write(result.to_json())
         if modal_volume is not None:
@@ -569,5 +569,5 @@ def run_question_batch(
         'completed': completed,
         'skipped': skipped,
         'errors': errors,
-        'total': len(question_ids),
+        'total': len(query_ids),
     }

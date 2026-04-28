@@ -67,10 +67,10 @@ def main():
     # embeddings available.
     vecs: list[np.ndarray] = []
     valid_indices: list[int] = []
-    for i, q in enumerate(questions):
-        qid = q['query_id']
-        if qid in query_embeddings:
-            vecs.append(query_embeddings[qid])
+    for i, query in enumerate(questions):
+        query_id = query['query_id']
+        if query_id in query_embeddings:
+            vecs.append(query_embeddings[query_id])
             valid_indices.append(i)
 
     q_matrix = np.array(vecs, dtype=np.float32)
@@ -84,20 +84,20 @@ def main():
     # --- Filter: gold doc in top-K -------------------------------------------
     filtered: list[dict] = []
     for search_idx, q_idx in enumerate(valid_indices):
-        q = questions[q_idx]
-        gold_doc_ids = set(q.get('gold_doc_ids', []))
+        query = questions[q_idx]
+        gold_doc_ids = set(query.get('gold_doc_ids', []))
         if not gold_doc_ids:
             continue
 
         # Map FAISS indices to doc IDs for this query's top-K results
         retrieved_doc_ids = [doc_ids[fi] for fi in faiss_indices[search_idx] if fi >= 0]
         if gold_doc_ids.intersection(retrieved_doc_ids):
-            filtered.append(q)
+            filtered.append(query)
 
     # --- Write output --------------------------------------------------------
     with open(OUTPUT_PATH, 'w') as f:
-        for q in filtered:
-            f.write(json.dumps(q, ensure_ascii=False) + '\n')
+        for query in filtered:
+            f.write(json.dumps(query, ensure_ascii=False) + '\n')
 
     elapsed = time.time() - t_start
     pct = len(filtered) / len(questions) * 100

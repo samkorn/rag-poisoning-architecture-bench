@@ -66,8 +66,8 @@ image = (
 volume = modal.Volume.from_name('rag-poisoning-data', create_if_missing=True)
 VOLUME_MOUNT = '/vol'
 # Results tree on the volume:
-#   /vol/results/experiments/<experiment_id>/<question_id>.json
-#   /vol/results/judge/<experiment_id>/<question_id>.json
+#   /vol/results/experiments/<experiment_id>/<query_id>.json
+#   /vol/results/judge/<experiment_id>/<query_id>.json
 #   /vol/results/judge_validation/judge_validation_<alias>_<effort>_<ts>/...
 RESULTS_DIR = f'{VOLUME_MOUNT}/results'
 EXPERIMENTS_DIR = f'{RESULTS_DIR}/experiments'
@@ -149,7 +149,7 @@ def judge_single_result(
 
     openai_client = OpenAI()
     experiment_id = result_dict['experiment_id']
-    question_id = result_dict['question_id']
+    query_id = result_dict['question_id']
 
     judge_result = evaluate_response(
         question=result_dict['question_text'],
@@ -157,7 +157,7 @@ def judge_single_result(
         target_answer=result_dict.get('target_answer'),
         system_answer=result_dict['system_answer'],
         experiment_id=experiment_id,
-        question_id=question_id,
+        query_id=query_id,
         system_message=system_message,
         user_message_template=user_message_template,
         model=model,
@@ -170,7 +170,7 @@ def judge_single_result(
     base_dir = output_base_dir or JUDGE_RESULTS_DIR
     exp_dir = os.path.join(base_dir, experiment_id)
     os.makedirs(exp_dir, exist_ok=True)
-    judge_path = os.path.join(exp_dir, f'{question_id}.json')
+    judge_path = os.path.join(exp_dir, f'{query_id}.json')
     with open(judge_path, 'w') as f:
         json.dump(judge_result, f, indent=2)
     volume.commit()
@@ -188,7 +188,7 @@ def judge_single_result(
 )
 def judge_single_result_from_volume(
     experiment_id: str,
-    question_id: str,
+    query_id: str,
     system_message: str,
     user_message_template: str,
     model: str,
@@ -205,7 +205,7 @@ def judge_single_result_from_volume(
 
     openai_client = OpenAI()
 
-    fpath = os.path.join(EXPERIMENTS_DIR, experiment_id, f'{question_id}.json')
+    fpath = os.path.join(EXPERIMENTS_DIR, experiment_id, f'{query_id}.json')
     with open(fpath) as f:
         result_dict = json.load(f)
 
@@ -215,7 +215,7 @@ def judge_single_result_from_volume(
         target_answer=result_dict.get('target_answer'),
         system_answer=result_dict['system_answer'],
         experiment_id=experiment_id,
-        question_id=question_id,
+        query_id=query_id,
         system_message=system_message,
         user_message_template=user_message_template,
         model=model,
@@ -226,7 +226,7 @@ def judge_single_result_from_volume(
 
     exp_dir = os.path.join(JUDGE_RESULTS_DIR, experiment_id)
     os.makedirs(exp_dir, exist_ok=True)
-    judge_path = os.path.join(exp_dir, f'{question_id}.json')
+    judge_path = os.path.join(exp_dir, f'{query_id}.json')
     with open(judge_path, 'w') as f:
         json.dump(judge_result, f, indent=2)
     volume.commit()
@@ -255,7 +255,7 @@ def count_result_files() -> dict[str, int]:
 
 
 def list_result_ids() -> list[tuple[str, str]]:
-    """Return (experiment_id, question_id) pairs for all result files without parsing JSON."""
+    """Return (experiment_id, query_id) pairs for all result files without parsing JSON."""
     ids = []
     for experiment_id in ALL_EXPERIMENTS:
         exp_dir = os.path.join(EXPERIMENTS_DIR, experiment_id)
@@ -269,7 +269,7 @@ def list_result_ids() -> list[tuple[str, str]]:
 
 
 def get_already_judged(base_dir: str = '') -> set[tuple[str, str]]:
-    """Return (experiment_id, question_id) pairs already successfully judged."""
+    """Return (experiment_id, query_id) pairs already successfully judged."""
     judge_dir = base_dir or JUDGE_RESULTS_DIR
     judged = set()
     if not os.path.isdir(judge_dir):
@@ -286,8 +286,8 @@ def get_already_judged(base_dir: str = '') -> set[tuple[str, str]]:
                 with open(fpath) as f:
                     prev = json.loads(f.read())
                 if prev.get('classification') is not None:
-                    question_id = fname.replace('.json', '')
-                    judged.add((experiment_id, question_id))
+                    query_id = fname.replace('.json', '')
+                    judged.add((experiment_id, query_id))
             except (json.JSONDecodeError, OSError):
                 pass
     return judged
@@ -366,9 +366,9 @@ def _stream_progress(results_iter, total: int, exp_total) -> tuple[int, int]:
 
         exp_done = exp_completed[exp_id] + exp_errors[exp_id]
         exp_tot = exp_total[exp_id]
-        q_id = result.get('question_id', '?')
+        query_id = result.get('question_id', '?')
 
-        print(f"  [{done}/{total}] {exp_id}-{q_id} ({exp_done}/{exp_tot})"
+        print(f"  [{done}/{total}] {exp_id}-{query_id} ({exp_done}/{exp_tot})"
               f"  ({rate:.0f}/min, ~{eta_min:.0f}min left)", flush=True)
 
     # Final per-experiment summary.
@@ -439,9 +439,9 @@ def _run_judge_from_volume(
     print(f"\nDispatching {total} results to up to 99 parallel containers...\n")
 
     worker_args = [
-        (exp_id, q_id, system_message, user_message_template,
+        (exp_id, query_id, system_message, user_message_template,
          model, reasoning_effort, embedding_model)
-        for exp_id, q_id in to_judge
+        for exp_id, query_id in to_judge
     ]
 
     return _stream_progress(
@@ -509,9 +509,9 @@ def run_judge_orchestrator(
     print(f"Already judged: {len(already_judged)}")
 
     to_judge = [
-        (exp_id, q_id) for exp_id, q_id in all_ids
-        if (exp_id, q_id) not in already_judged
-        and q_id not in noise_ids
+        (exp_id, query_id) for exp_id, query_id in all_ids
+        if (exp_id, query_id) not in already_judged
+        and query_id not in noise_ids
     ]
     print(f"To judge: {len(to_judge)} (excluding NOISE and already-judged)")
 
@@ -856,9 +856,9 @@ def main(
 ):
     if validation:
         review_data = _load_review_csv()
-        n_questions = len(set(r['question_id'] for r in review_data))
+        n_queries = len(set(r['question_id'] for r in review_data))
         n_experiments = len(set(r['experiment_id'] for r in review_data))
-        print(f"Loaded {len(review_data)} rows ({n_questions} questions x {n_experiments} experiments)")
+        print(f"Loaded {len(review_data)} rows ({n_queries} queries x {n_experiments} experiments)")
 
         if report_only:
             print(f"\nDownloading validation results from Modal Volume...")
@@ -941,9 +941,9 @@ if __name__ == '__main__':
         raise SystemExit(1)
 
     review_data = _load_review_csv()
-    n_questions = len(set(r['question_id'] for r in review_data))
+    n_queries = len(set(r['question_id'] for r in review_data))
     n_experiments = len(set(r['experiment_id'] for r in review_data))
-    print(f"Loaded {len(review_data)} rows ({n_questions} questions x {n_experiments} experiments)")
+    print(f"Loaded {len(review_data)} rows ({n_queries} queries x {n_experiments} experiments)")
 
     if args.dry_run:
         from collections import Counter

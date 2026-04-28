@@ -100,9 +100,9 @@ volume = modal.Volume.from_name('rag-poisoning-data', create_if_missing=True)
 VOLUME_MOUNT = '/vol'
 
 # Results tree on the volume:
-#   /vol/results/experiments/<experiment_id>/<question_id>.json
-#   /vol/results/judge/<experiment_id>/<question_id>.json
-#   /vol/results/noise/<question_id>.json
+#   /vol/results/experiments/<experiment_id>/<query_id>.json
+#   /vol/results/judge/<experiment_id>/<query_id>.json
+#   /vol/results/noise/<query_id>.json
 #   /vol/results/archive/
 RESULTS_DIR = f'{VOLUME_MOUNT}/results'
 EXPERIMENTS_DIR = f'{RESULTS_DIR}/experiments'
@@ -207,8 +207,8 @@ def build_experiment_matrix() -> list:
     return experiments
 
 
-def is_experiment_complete(experiment_id: str, n_questions: int) -> bool:
-    """Check if all questions have *successful* result JSONs for this experiment.
+def is_experiment_complete(experiment_id: str, n_queries: int) -> bool:
+    """Check if all queries have *successful* result JSONs for this experiment.
 
     Only counts results where ``error`` is None.  Error results from previous
     rate-limit failures etc. are ignored so the orchestrator will re-dispatch
@@ -228,7 +228,7 @@ def is_experiment_complete(experiment_id: str, n_questions: int) -> bool:
                 n_success += 1
         except (json.JSONDecodeError, OSError):
             pass
-    return n_success >= n_questions
+    return n_success >= n_queries
 
 
 # ---------------------------------------------------------------------------
@@ -244,12 +244,12 @@ def is_experiment_complete(experiment_id: str, n_questions: int) -> bool:
     memory=14336,  # 14 GiB — FAISS index + corpus + Contriever model
     max_containers=99, # 100 default Modal limit minus 1 for orchestrator
 )
-def run_worker(config_dict: dict, question_ids: list[str]) -> dict:
-    """Worker: process a batch of questions for one experiment.
+def run_worker(config_dict: dict, query_ids: list[str]) -> dict:
+    """Worker: process a batch of queries for one experiment.
 
     Each invocation runs in its own Modal container.  Loads the FAISS index
-    and QA system once, then iterates through its assigned questions with
-    per-question checkpointing.
+    and QA system once, then iterates through its assigned queries with
+    per-query checkpointing.
     """
     setup_container()
 
@@ -259,18 +259,18 @@ def run_worker(config_dict: dict, question_ids: list[str]) -> dict:
     cfg_kwargs = {k: v for k, v in config_dict.items() if k != 'corpus_type'}
     config = ExperimentConfig(**cfg_kwargs)
 
-    # Load questions from Volume.
-    questions_path = os.path.join(VOLUME_MOUNT, 'experiment-datasets', 'nq-questions-gold-filtered.jsonl')
-    questions: dict[str, dict] = {}
-    with open(questions_path) as f:
+    # Load queries from Volume.
+    queries_path = os.path.join(VOLUME_MOUNT, 'experiment-datasets', 'nq-questions-gold-filtered.jsonl')
+    queries: dict[str, dict] = {}
+    with open(queries_path) as f:
         for line in f:
             line_dict = json.loads(line)
-            questions[line_dict['query_id']] = line_dict
+            queries[line_dict['query_id']] = line_dict
 
     summary = run_question_batch(
         config=config,
-        question_ids=question_ids,
-        questions=questions,
+        query_ids=query_ids,
+        queries=queries,
         results_dir=EXPERIMENTS_DIR,
         modal_volume=volume,
     )
@@ -297,22 +297,22 @@ def run_orchestrator():
     """
     setup_container()
 
-    from src.experiments.experiment import split_questions
+    from src.experiments.experiment import split_query_ids
 
-    # Load question IDs from nq-questions.jsonl on the Volume.
-    questions_path = os.path.join(VOLUME_MOUNT, 'experiment-datasets', 'nq-questions-gold-filtered.jsonl')
-    all_question_ids: list[str] = []
-    with open(questions_path) as f:
+    # Load query IDs from nq-questions.jsonl on the Volume.
+    queries_path = os.path.join(VOLUME_MOUNT, 'experiment-datasets', 'nq-questions-gold-filtered.jsonl')
+    all_query_ids: list[str] = []
+    with open(queries_path) as f:
         for line in f:
             line_dict = json.loads(line)
-            all_question_ids.append(line_dict['query_id'])
+            all_query_ids.append(line_dict['query_id'])
 
-    n_questions = len(all_question_ids)
+    n_queries = len(all_query_ids)
     experiments = build_experiment_matrix()
-    batches = split_questions(all_question_ids, n_workers=99)
+    batches = split_query_ids(all_query_ids, n_workers=99)
 
-    print(f"Starting {len(experiments)} experiments, {n_questions} questions each")
-    print(f"Workers per experiment: {len(batches)}, ~{n_questions // len(batches)} questions/worker")
+    print(f"Starting {len(experiments)} experiments, {n_queries} queries each")
+    print(f"Workers per experiment: {len(batches)}, ~{n_queries // len(batches)} queries/worker")
     print()
 
     for i, config in enumerate(experiments):
@@ -325,7 +325,7 @@ def run_orchestrator():
         # Refresh volume to see results written by previous experiments.
         volume.reload()
 
-        if is_experiment_complete(config.experiment_id, n_questions):
+        if is_experiment_complete(config.experiment_id, n_queries):
             print("  -> Already complete, skipping")
             continue
 

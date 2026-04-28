@@ -126,7 +126,7 @@ class IsExperimentCompleteUnitTests(unittest.TestCase):
         orch_mod.EXPERIMENTS_DIR = self.tmp_dir
 
         self.exp_id = 'test_vanilla_clean'
-        self.n_questions = 10
+        self.n_queries = 10
         self.exp_dir = os.path.join(self.tmp_dir, self.exp_id)
 
     def tearDown(self):
@@ -140,30 +140,30 @@ class IsExperimentCompleteUnitTests(unittest.TestCase):
             json.dump(payload, f)
 
     def test_missing_dir_is_incomplete(self):
-        self.assertFalse(is_experiment_complete(self.exp_id, self.n_questions))
+        self.assertFalse(is_experiment_complete(self.exp_id, self.n_queries))
 
     def test_empty_dir_is_incomplete(self):
         os.makedirs(self.exp_dir)
-        self.assertFalse(is_experiment_complete(self.exp_id, self.n_questions))
+        self.assertFalse(is_experiment_complete(self.exp_id, self.n_queries))
 
     def test_partial_results_is_incomplete(self):
         for i in range(5):
             self._write_result(f'test{i}.json', {'question_id': f'test{i}'})
-        self.assertFalse(is_experiment_complete(self.exp_id, self.n_questions))
+        self.assertFalse(is_experiment_complete(self.exp_id, self.n_queries))
 
     def test_summary_json_does_not_count_toward_completion(self):
         for i in range(5):
             self._write_result(f'test{i}.json', {'question_id': f'test{i}'})
         self._write_result('summary.json', {'completed': 5})
-        self.assertFalse(is_experiment_complete(self.exp_id, self.n_questions))
+        self.assertFalse(is_experiment_complete(self.exp_id, self.n_queries))
 
     def test_full_results_is_complete(self):
-        for i in range(self.n_questions):
+        for i in range(self.n_queries):
             self._write_result(f'test{i}.json', {'question_id': f'test{i}'})
-        self.assertTrue(is_experiment_complete(self.exp_id, self.n_questions))
+        self.assertTrue(is_experiment_complete(self.exp_id, self.n_queries))
 
     def test_excess_results_still_complete(self):
-        for i in range(self.n_questions):
+        for i in range(self.n_queries):
             self._write_result(f'test{i}.json', {'question_id': f'test{i}'})
         self._write_result('test_extra.json', {'question_id': 'extra'})
-        self.assertTrue(is_experiment_complete(self.exp_id, self.n_questions))
+        self.assertTrue(is_experiment_complete(self.exp_id, self.n_queries))

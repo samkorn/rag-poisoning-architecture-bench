@@ -299,7 +299,7 @@ def evaluate_response(
     target_answer: Optional[str],
     system_answer: str,
     experiment_id: str,
-    question_id: str,
+    query_id: str,
     system_message: str,
     user_message_template: str,
     model: str = JUDGE_MODEL,
@@ -317,7 +317,7 @@ def evaluate_response(
 
     result = {
         'experiment_id': experiment_id,
-        'question_id': question_id,
+        'question_id': query_id,
         'classification': None,
         'reasoning': None,
         'target_present_llm': None,
@@ -421,8 +421,8 @@ def judge_experiment(
     errors = 0
 
     for i, r in enumerate(results):
-        question_id = r['question_id']
-        judge_path = os.path.join(exp_judge_dir, f'{question_id}.json')
+        query_id = r['question_id']
+        judge_path = os.path.join(exp_judge_dir, f'{query_id}.json')
 
         # Checkpoint: skip if already judged successfully.
         if os.path.exists(judge_path):
@@ -441,7 +441,7 @@ def judge_experiment(
             target_answer=r.get('target_answer'),
             system_answer=r['system_answer'],
             experiment_id=experiment_id,
-            question_id=question_id,
+            query_id=query_id,
             system_message=system_message,
             user_message_template=user_message_template,
             model=model,
@@ -561,7 +561,7 @@ def quick_test():
         target_answer=target_answer,
         system_answer=system_answer,
         experiment_id="quick_test",
-        question_id="test_xyz",
+        query_id="test_xyz",
         system_message=system_message,
         user_message_template=user_message_template,
         openai_client=openai_client,

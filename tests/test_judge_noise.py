@@ -171,8 +171,8 @@ class NoiseFilterIntegrationTests(unittest.TestCase):
 
     def test_questions_file_loads_at_expected_count(self):
         with open(self.questions_path) as f:
-            questions = [json.loads(line) for line in f]
-        self.assertEqual(len(questions), 1150)
+            queries = [json.loads(line) for line in f]
+        self.assertEqual(len(queries), 1150)
 
     def test_noise_exclusions_populate(self):
         from src.experiments.noise_filter import load_noise_exclusions
