@@ -127,9 +127,23 @@ class AgenticRAG(QASystem):
     retrieve-then-generate flow.
 
     Attributes:
-        agentic_rag_system_prompt: System prompt that nudges the
-            agent to always issue at least one initial search before
-            answering.
+        agentic_rag_system_prompt: Class-level system prompt that
+            nudges the agent to always issue at least one initial
+            search before answering.
+        vector_store: Shared `VectorStore` the agent's tools
+            dispatch to.
+        openai_client: `AsyncOpenAI` client constructed once with
+            the shared `_LLM_CALL_TIMEOUT_SECONDS` HTTP timeout.
+        provider: PydanticAI `OpenAIProvider` wrapping
+            `openai_client`.
+        model: `OpenAIResponsesModel` bound to the model ID and the
+            provider.
+        model_settings: `OpenAIResponsesModelSettings` carrying
+            reasoning controls, or `None` when neither
+            `reasoning_effort` nor `reasoning_summary` was set.
+        agent: PydanticAI `Agent` driving the tool-use loop.
+            Constructed once per instance in `__init__` and reused
+            across every `_run` call.
     """
 
     agentic_rag_system_prompt = """
@@ -142,7 +156,11 @@ class AgenticRAG(QASystem):
     """
 
     def __init__(self, corpus_type: str, top_k: int = 5, **kwargs):
-        """Initialize an Agentic RAG instance: vector store, OpenAI client, agent.
+        """Initialize an Agentic RAG instance with its agent and tools.
+
+        Builds the shared `VectorStore`, the underlying `AsyncOpenAI`
+        client, and the PydanticAI `Agent` configured with both
+        retrieval tools.
 
         Args:
             corpus_type: Which corpus to retrieve from
@@ -190,7 +208,7 @@ class AgenticRAG(QASystem):
         )
 
     def _run(self, question: str, query_id: str) -> str:
-        """Hand the question to the PydanticAI agent and return its final answer.
+        """Hand the question to the agent and return its final answer.
 
         Builds an `AgenticRAGDeps` carrying the shared `VectorStore`
         plus per-question metadata, then drives the agent's tool-use

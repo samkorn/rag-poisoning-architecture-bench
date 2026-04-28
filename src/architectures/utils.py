@@ -47,7 +47,7 @@ def execute_llm_call(
     response_format: Optional[Type[BaseModel]] = None,
     truncation: Optional[str] = None,
 ) -> Union[str, BaseModel]:
-    """Call the OpenAI Responses API with shared timeout, retry, and reasoning controls.
+    """Call the OpenAI Responses API with shared retry and timeout.
 
     Builds a fresh `OpenAI` client per call (max_retries=0 so tenacity
     owns all retries) and routes the request through either

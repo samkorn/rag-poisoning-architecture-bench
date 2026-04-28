@@ -41,10 +41,21 @@ class RLM(QASystem):
     those articles, concatenated in original-corpus order. The
     intent is to test the model's ability to handle long contexts
     without retrieval acting as a filter.
+
+    Attributes:
+        vector_store: Shared `VectorStore` instance used for the
+            initial top-K retrieval before article expansion.
+        rlm: Upstream `RLM` client (`rlm.RLM`) configured with the
+            OpenAI backend, the chosen model ID, and the shared
+            per-call HTTP timeout.
     """
 
     def __init__(self, corpus_type: str, verbose: bool = False, **kwargs):
-        """Initialize an RLM instance, preload the title→doc-id map, and build the `rlm` client.
+        """Initialize an RLM instance and its underlying `rlm` client.
+
+        Preloads the title→doc-id map into the module-level cache in
+        `src.data.utils` so subsequent `_run` calls return the
+        cached dict instantly.
 
         Args:
             corpus_type: Which corpus to retrieve from
@@ -61,13 +72,10 @@ class RLM(QASystem):
                 miss the gold article entirely.
 
         Notes:
-            The title-to-doc-ids map is preloaded into
-            `src.data.utils`'s module-level cache so subsequent
-            calls return instantly. Per-call timeout flows through
-            `rlm` -> `OpenAIClient` -> `BaseLM` -> `openai.OpenAI`.
-            No `tenacity` wrapper surrounds `rlm.completion`, so the
-            OpenAI SDK's default `max_retries=2` provides transient
-            429/5xx protection.
+            Per-call timeout flows through `rlm` -> `OpenAIClient`
+            -> `BaseLM` -> `openai.OpenAI`. No `tenacity` wrapper
+            surrounds `rlm.completion`, so the OpenAI SDK's default
+            `max_retries=2` provides transient 429/5xx protection.
         """
         if 'top_k' in kwargs:
             raise ValueError("top_k is not allowed to be set for RLM")
@@ -95,7 +103,7 @@ class RLM(QASystem):
 
     @staticmethod
     def _doc_id_sort_key(doc_id: str) -> tuple:
-        """Build a sort key that orders article passages naturally with poisoned docs at the end.
+        """Build a sort key for article passages with poisoned docs last.
 
         Original passages (`doc0`, `doc1`, ...) sort first by their
         trailing integer, so the article reads in natural order.
@@ -127,7 +135,7 @@ class RLM(QASystem):
         self,
         retrieved_docs: list[dict[str, str]]
     ) -> list[str]:
-        """Collect every passage for each retrieved article title, ordered for reading.
+        """Collect every passage for each retrieved article title.
 
         Groups by title so each Wikipedia article's passages are
         contiguous, then sorts within each group via
@@ -154,7 +162,7 @@ class RLM(QASystem):
         return result
 
     def _run(self, question: str, query_id: str) -> str:
-        """Retrieve top-K passages, expand to full articles, and run the RLM completion.
+        """Retrieve top-K passages, expand to full articles, run RLM.
 
         Args:
             question: Natural-language question.

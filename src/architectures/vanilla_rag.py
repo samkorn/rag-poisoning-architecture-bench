@@ -27,6 +27,10 @@ class VanillaRAG(QASystem):
     them as context for one LLM call. No tool use, no debate, no
     iteration — the simplest possible RAG and the experimental
     control against which the other three architectures are compared.
+
+    Attributes:
+        vector_store: Shared `VectorStore` instance used for
+            retrieval, loaded once per architecture instance.
     """
 
     def __init__(self, corpus_type: str, top_k: int = 5, **kwargs):

@@ -135,7 +135,10 @@ class QASystem(ABC):
 
     @abstractmethod
     def _run(self, question: str, query_id: Optional[str]) -> str:
-        """Architecture-specific retrieval + generation. Subclasses must implement.
+        """Architecture-specific retrieval and generation logic.
+
+        Subclasses must implement this method; it's the single point
+        of variation between Vanilla, Agentic, MADAM, and RLM.
 
         Args:
             question: Natural-language question to answer.

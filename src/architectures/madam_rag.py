@@ -55,7 +55,7 @@ def _normalize_answer(s: str) -> str:
 
 
 def _agent_response(query: str, document: str, model_id: str, history: str = '') -> str:
-    """Generate one agent's answer for a single document, optionally seeded with peer history.
+    """Generate one agent's answer for a single document.
 
     Used in every debate round. The prompt branches on whether
     `history` is supplied: round 1 sees only the assigned document;
@@ -148,7 +148,7 @@ def _multi_agent_debate(
     num_rounds: int = 3,
     log_tag: str = '',
 ) -> dict:
-    """Run the full MADAM-RAG debate loop and return the round-by-round transcript.
+    """Run the full MADAM-RAG debate loop and return the transcript.
 
     Round 1 has each agent answer independently. Each subsequent
     round shows every agent its peers' previous-round responses and
@@ -251,6 +251,15 @@ class MadamRAG(QASystem):
     Retrieves `top_k` passages, spawns one agent per passage,
     iterates the debate loop in `_multi_agent_debate` for up to
     `num_rounds`, and returns the aggregator's final answer.
+
+    Attributes:
+        vector_store: Shared `VectorStore` instance used for
+            retrieval, loaded once per architecture instance.
+        _last_debate_records: Round-by-round transcript of the most
+            recent `_run` call. Populated as a side channel so the
+            experiment loop can persist it to disk for later
+            inspection. Only assigned during `_run`, so accessing
+            it before the first call raises `AttributeError`.
     """
 
     def __init__(self, corpus_type: str, top_k: int = 5, num_rounds: int = 3, **kwargs):
@@ -276,11 +285,11 @@ class MadamRAG(QASystem):
         self.vector_store = VectorStore(self.corpus_type)
 
     def _run(self, question: str, query_id: Optional[str]) -> str:
-        """Retrieve passages, run the debate, and stash the round-by-round transcript.
+        """Retrieve passages, run the debate, and stash the transcript.
 
-        The full transcript is stored on `self._last_debate_records`
-        so callers (e.g. the experiment loop) can persist it to
-        disk for later inspection.
+        The full round-by-round transcript is stored on
+        `self._last_debate_records` so callers (e.g. the experiment
+        loop) can persist it to disk for later inspection.
 
         Args:
             question: Natural-language question.
