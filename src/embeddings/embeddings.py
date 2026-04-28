@@ -18,10 +18,13 @@ class Embedder:
         self.model = AutoModel.from_pretrained(model_path, token=os.environ.get('HF_TOKEN')).to(self.device)
         self.model.eval()
 
-    def _mean_pooling(self, token_embeddings: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-        token_embeddings = token_embeddings.masked_fill(~mask[..., None].bool(), 0.) # zero out padding tokens
-        sentence_embeddings = token_embeddings.sum(dim=1) / mask.sum(dim=1)[..., None] # sum up token embeddings and divide by number of non-padding tokens
-        return sentence_embeddings
+    def _mean_pooling(self, token_embeddings: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
+        """Mean-pool token embeddings over the sequence dim, ignoring padding."""
+        reshaped_mask = attention_mask.unsqueeze(-1).float()          # (B, T, 1)
+        masked_embeddings = token_embeddings * reshaped_mask          # zero out padded positions
+        summed_embeddings = masked_embeddings.sum(dim=1)              # (B, H)
+        embedding_counts = reshaped_mask.sum(dim=1).clamp(min=1e-9)   # (B, 1), avoid div-by-zero
+        return summed_embeddings / embedding_counts
 
     def embed(self, sentences: list[str]) -> list[np.ndarray]:
         inputs = self.tokenizer(sentences, padding=True, truncation=True, return_tensors='pt')
