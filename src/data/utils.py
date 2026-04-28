@@ -1,4 +1,4 @@
-"""Shared data utilities — query lookup, dataset paths, and noise-filter exclusions.
+"""Shared data utilities — query lookup, paths, NOISE exclusions.
 
 Defines:
 
@@ -44,10 +44,20 @@ _NOISE_RESULTS_PATHS = [
 
 
 def _load_noise_question_ids() -> set[str]:
-    """Load NOISE question IDs from the noise filter results directory.
+    """Load full-NOISE question IDs from the first available results dir.
 
-    Checks local path first, then Modal volume path. Returns only 'full'
-    NOISE (not partial). Raises if no results found.
+    Checks the local path first, then the Modal volume mount. Reads
+    every per-question JSON in the results dir, skipping the
+    summary file, and returns the IDs whose `is_noise` is true and
+    `noise_type` is `'full'` (partial NOISE is not excluded by
+    default).
+
+    Returns:
+        Set of NOISE-classified `query_id` strings.
+
+    Raises:
+        FileNotFoundError: When neither candidate path contains
+            noise filter results.
     """
     for candidate in _NOISE_RESULTS_PATHS:
         noise_dir = os.path.normpath(candidate)
@@ -84,7 +94,13 @@ _NOISE_QUESTION_IDS_CACHE: set[str] | None = None
 
 
 def get_noise_question_ids() -> set[str]:
-    """Return the set of full-NOISE question IDs, loading + caching on first call."""
+    """Return the cached full-NOISE question-ID set, loading on first call.
+
+    Cached at module level so file IO happens once per process. The
+    actual disk read is deferred until the first call so that
+    importing this module doesn't require noise data on disk —
+    keeping unit tests that don't exercise judging import-clean.
+    """
     global _NOISE_QUESTION_IDS_CACHE
     if _NOISE_QUESTION_IDS_CACHE is None:
         _NOISE_QUESTION_IDS_CACHE = _load_noise_question_ids()
@@ -96,6 +112,22 @@ def get_noise_question_ids() -> set[str]:
 
 
 def get_question_from_query_id(query_id: str) -> str:
+    """Look up a query's natural-language text by its NQ test ID.
+
+    Streams `original-datasets/nq/queries.jsonl` until a match is
+    found. Not cached because callers typically request a single
+    ID per process call.
+
+    Args:
+        query_id: NQ test query identifier (e.g. `test0`).
+
+    Returns:
+        The natural-language question text.
+
+    Raises:
+        ValueError: If `query_id` doesn't appear in the queries
+            file.
+    """
     with open(_QUERIES_PATH, 'r') as f:
         for line in f.readlines():
             line_dict = json.loads(line)
@@ -105,6 +137,19 @@ def get_question_from_query_id(query_id: str) -> str:
 
 
 def get_query_id_from_question(question: str) -> str:
+    """Reverse-lookup a query's NQ test ID by its natural-language text.
+
+    Args:
+        question: Exact question text as it appears in
+            `original-datasets/nq/queries.jsonl`.
+
+    Returns:
+        The NQ test query ID.
+
+    Raises:
+        ValueError: If `question` doesn't appear in the queries
+            file.
+    """
     with open(_QUERIES_PATH, 'r') as f:
         for line in f.readlines():
             line_dict = json.loads(line)
@@ -114,6 +159,21 @@ def get_query_id_from_question(question: str) -> str:
 
 
 def load_title_to_doc_ids_map(corpus_type: str) -> dict[str, set[str]]:
+    """Load (and cache) the `{title: {doc_id, ...}}` map for a corpus.
+
+    Used by `RLM` to expand a top-K retrieval into the full set of
+    passages for each surfaced Wikipedia article. The map is cached
+    per `corpus_type` at module scope so subsequent calls return
+    the same dict instantly.
+
+    Args:
+        corpus_type: Which corpus to load
+            (`original`, `naive_poisoned`, `corruptrag_ak_poisoned`).
+
+    Returns:
+        Map from article title to the set of doc IDs whose passages
+        live under that title.
+    """
     global _title_to_doc_ids_by_corpus_type
     if corpus_type not in _title_to_doc_ids_by_corpus_type:
         print(f"Loading title -> doc IDs map for corpus type: {corpus_type}...")

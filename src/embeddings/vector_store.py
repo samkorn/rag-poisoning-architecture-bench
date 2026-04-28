@@ -66,11 +66,33 @@ CORPUS_PATHS = {
 
 
 class VectorStore:
-    """Loads and caches corpus + FAISS index for a single corpus type.
+    """Load and cache the corpus + FAISS index for a single corpus type.
 
-    Singleton per corpus_type — calling VectorStore('original') twice returns
-    the same instance without reloading.  Queries and query embeddings are
-    shared across all instances and loaded once on first construction.
+    Per-`corpus_type` singleton — calling `VectorStore('original')`
+    twice returns the same instance without reloading. Pre-computed
+    query embeddings are class-level state, so they're loaded once
+    and shared across every instance.
+
+    Attributes:
+        _instances: Class-level cache mapping `corpus_type` to its
+            constructed `VectorStore`. Drives the singleton
+            behavior in `__new__`.
+        _query_embeddings: Class-level dict of pre-computed query
+            embeddings, lazily loaded by the first instance and
+            then reused by every subsequent instance.
+        corpus_type: Which corpus this instance was constructed
+            for (`original`, `naive_poisoned`, `corruptrag_ak_poisoned`).
+        _initialized: Sentinel flag set on first `__init__` so the
+            second `VectorStore('original')` call short-circuits
+            without redoing the loads.
+        _corpus: Map from doc ID to `{'title', 'text'}` for this
+            corpus.
+        _index: FAISS index for this corpus.
+        _doc_ids: List of doc IDs aligned with the rows of `_index`
+            (FAISS works on integer offsets; this list maps them
+            back to string IDs).
+        _embedder: `Embedder` used by the live-embedding fallback
+            path when `retrieve` is called without a `query_id`.
     """
 
     _instances: dict[str, 'VectorStore'] = {}
@@ -79,6 +101,19 @@ class VectorStore:
     _query_embeddings: dict[str, np.ndarray] | None = None
 
     def __new__(cls, corpus_type: str) -> 'VectorStore':
+        """Return the cached instance for `corpus_type` or create a fresh one.
+
+        The actual data loading happens in `__init__`. This method
+        is the gate that makes `VectorStore` a per-`corpus_type`
+        singleton.
+
+        Args:
+            corpus_type: Which corpus to retrieve from.
+
+        Returns:
+            Either the previously constructed instance for this
+            `corpus_type` or a freshly allocated one.
+        """
         if corpus_type in cls._instances:
             return cls._instances[corpus_type]
         else:
@@ -87,6 +122,19 @@ class VectorStore:
             return instance
 
     def __init__(self, corpus_type: str):
+        """Load the corpus, FAISS index, and embedder for `corpus_type`.
+
+        Short-circuits when `_initialized` is already set so the
+        singleton's second-and-later constructions are no-ops.
+
+        Args:
+            corpus_type: Which corpus to retrieve from
+                (`original`, `naive_poisoned`, `corruptrag_ak_poisoned`).
+
+        Raises:
+            ValueError: If `corpus_type` isn't one of the three
+                supported values.
+        """
         if hasattr(self, '_initialized'):
             return
         self._initialized = True
@@ -123,6 +171,11 @@ class VectorStore:
 
     @classmethod
     def _load_query_embeddings(cls):
+        """Load pre-computed query embeddings into the class-level cache.
+
+        Called on first `VectorStore` construction; subsequent
+        instances see the populated cache and skip the load.
+        """
         print("  Loading query embeddings...")
         t0 = time.time()
         with open(EMBEDDINGS_PATHS['queries'], 'rb') as f:
@@ -130,6 +183,13 @@ class VectorStore:
         print(f"    Query embeddings: {len(cls._query_embeddings):,} ({time.time() - t0:.1f}s)")
 
     def _load_corpus(self) -> dict[str, dict]:
+        """Load the corpus jsonl into a `{doc_id: {'title', 'text'}}` map.
+
+        Returns:
+            Map from doc ID to its title and text. Used by
+            `retrieve` to attach passage content to FAISS hits and
+            by `get_document_from_doc_id` for direct lookup.
+        """
         corpus_path = CORPUS_PATHS[self.corpus_type]
         t0 = time.time()
         docs: dict[str, dict] = {}
@@ -142,6 +202,18 @@ class VectorStore:
         return docs
 
     def _load_index(self) -> tuple[faiss.IndexFlatIP, list[str]]:
+        """Load the FAISS index and its parallel doc-id list from disk.
+
+        Returns:
+            Tuple `(index, doc_ids)`. `index` is the loaded
+            `IndexFlatIP`; `doc_ids[i]` is the string identifier
+            for vector row `i` (FAISS returns integer offsets, so
+            this list is what maps them back to corpus IDs).
+
+        Raises:
+            FileNotFoundError: If the index hasn't been built yet
+                — points the caller at `build_vector_indexes.py`.
+        """
         index_paths = INDEX_PATHS[self.corpus_type]
         if not os.path.exists(index_paths['index']):
             index_err_msg = (
@@ -157,6 +229,19 @@ class VectorStore:
         return index, doc_ids
     
     def _embed_query_live(self, query: str) -> np.ndarray:
+        """Embed a query on the fly when no `query_id` is provided.
+
+        Mirrors the offline pipeline (float32 + L2 normalize) so the
+        live-embedded vector lives in the same space as the
+        pre-computed ones already stored in `_query_embeddings`.
+
+        Args:
+            query: Raw question text.
+
+        Returns:
+            Contiguous float32 array of shape `(1, D)`, L2-normalized
+            in place.
+        """
         query_vec = self._embedder.embed_single(query)
         query_vec = np.ascontiguousarray(query_vec, dtype=np.float32)
         if query_vec.ndim == 1:
@@ -174,17 +259,26 @@ class VectorStore:
         top_k: int = 5,
         query_id: str | None = None,
     ) -> list[dict]:
-        """Retrieve top-K documents for a question.
+        """Retrieve the top-K passages for a question.
 
         Args:
-            question:  The query text.
-            top_k:     Number of documents to return.
-            query_id:  If provided (e.g. 'test0'), uses the pre-computed query
-                       embedding for speed.  Otherwise falls back to live
-                       Contriever embedding.
+            question: The query text. Used by the live-embedding
+                fallback path when `query_id` isn't provided.
+            top_k: Number of passages to return.
+            query_id: When provided (e.g. `test0`), uses the
+                pre-computed query embedding for speed. Otherwise
+                falls back to live Contriever embedding via
+                `_embed_query_live`.
 
         Returns:
-            List of dicts with keys: doc_id, title, text, score.
+            List of result dicts with keys `doc_id`, `title`,
+            `text`, and `score` (cosine similarity, since the
+            index is L2-normalized inner-product). Sorted by score
+            descending.
+
+        Raises:
+            KeyError: If `query_id` is provided but isn't in the
+                pre-computed query-embeddings cache.
         """
         if query_id is not None:
             # if query_id is provided, use the pre-computed query embedding
@@ -219,6 +313,20 @@ class VectorStore:
     
 
     def get_document_from_doc_id(self, doc_id: str) -> dict:
+        """Look up a single document by ID, bypassing retrieval.
+
+        Used by `AgenticRAG.get_document_by_id` and by `RLM` when
+        expanding retrieved articles into their full passage list.
+
+        Args:
+            doc_id: Corpus document identifier.
+
+        Returns:
+            Dict with `title` and `text`.
+
+        Raises:
+            ValueError: If `doc_id` isn't in the loaded corpus.
+        """
         if doc_id not in self._corpus:
             raise ValueError(f"doc_id '{doc_id}' not found in corpus '{self.corpus_type}'")
         return self._corpus[doc_id]

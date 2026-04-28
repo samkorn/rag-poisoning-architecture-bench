@@ -1,6 +1,7 @@
-"""Filters `nq-questions.jsonl` down to queries whose gold doc appears in top-10 clean retrieval.
+"""Filter `nq-questions.jsonl` to queries whose gold doc hits in top-10.
 
-Uses the same on-disk artifacts as `src.embeddings.vector_store`
+The filter uses the same on-disk artifacts as
+`src.embeddings.vector_store`
 (query embedding pickle, `nq-original.faiss`, `nq-original-doc-ids.pkl`)
 so retrieval scores/ranks match experiment-time retrieval.
 
@@ -65,6 +66,15 @@ TOP_K = 10
 
 
 def main():
+    """Run the gold-filter pipeline and write the filtered queries to disk.
+
+    Loads `nq-questions.jsonl`, the precomputed query-embedding
+    pickle, the FAISS index, and the parallel doc-ID list; stacks
+    every query embedding into a single matrix; runs one batch
+    `index.search`; keeps queries whose top-K retrieval intersects
+    their `gold_doc_ids`; writes the survivors to
+    `nq-questions-gold-filtered.jsonl`.
+    """
     t_start = time.time()
 
     # --- Load queries --------------------------------------------------------

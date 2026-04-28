@@ -103,6 +103,7 @@ class ModulePathsIntegrationTests(unittest.TestCase):
         cls.repo_root = repo_root
 
     def test_all_modules_import(self):
+        """Every local + Modal-only module imports without raising."""
         failed: list[tuple[str, str]] = []
         for mod_name in _ALL_LOCAL_MODULES + _MODAL_MODULES:
             try:
@@ -112,6 +113,7 @@ class ModulePathsIntegrationTests(unittest.TestCase):
         self.assertFalse(failed, f"Failed imports: {failed}")
 
     def test_data_path_constants_resolve(self):
+        """Path constants in `src.data.*` resolve to real files/dirs."""
         from src.data.utils import _DATA_BASE, _QUERIES_PATH, _QRELS_PATH, _CORPUS_PATHS
         from src.data.create_questions import _DATA_DIR as cq_data_dir
         from src.data.filter_gold_questions import _DATA_DIR as fg_data_dir
@@ -147,6 +149,7 @@ class ModulePathsIntegrationTests(unittest.TestCase):
             self.assertTrue(os.path.exists(path), f"{label}: path does not exist: {path}")
 
     def test_vector_store_path_constants_resolve(self):
+        """FAISS index, doc-ID, and query-embedding paths all exist on disk."""
         from src.embeddings.vector_store import VECTOR_STORE_DIR, _DATA_BASE
         from src.embeddings.build_vector_indexes import VECTOR_STORE_DIR as bvi_vs_dir
 
@@ -166,6 +169,7 @@ class ModulePathsIntegrationTests(unittest.TestCase):
         self.assertTrue(os.path.exists(qe))
 
     def test_experiment_path_constants_resolve(self):
+        """Result/judge/noise/review paths in `src.experiments.*` exist."""
         from src.experiments.llm_judge import (
             RESULTS_DIR, EXPERIMENTS_DIR, JUDGE_RESULTS_DIR, load_judge_prompt,
         )

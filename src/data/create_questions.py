@@ -1,8 +1,9 @@
-"""Builds `nq-questions.jsonl`, the unified per-query record file used by experiment workers.
+"""Build `nq-questions.jsonl`, the per-query record file used by workers.
 
-Merges three local sources into one record per query:
+Merges four local sources into one record per query:
 
   * `original-datasets/nq/queries.jsonl` (`_id`, `text`)
+  * `original-datasets/nq/qrels/test.tsv` (gold doc-id mapping)
   * `experiment-datasets/nq-correct-answers.jsonl` (`query_id`,
     `correct_answer`)
   * `experiment-datasets/nq-incorrect-answers-poisoned-docs.jsonl`
@@ -34,7 +35,17 @@ _DATA_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 def load_qrels(path: str) -> dict[str, list[str]]:
-    """Load qrels TSV into {query_id: [corpus_id, ...]} mapping."""
+    """Load a BEIR qrels TSV into a `{query_id: [corpus_id, ...]}` mapping.
+
+    Skips the header row. Multiple corpus IDs per query are
+    accumulated in insertion order.
+
+    Args:
+        path: Path to the qrels TSV (header `query-id corpus-id score`).
+
+    Returns:
+        Map from query ID to its list of gold corpus IDs.
+    """
     qrels: dict[str, list[str]] = {}
     with open(path) as f:
         next(f)  # skip header
@@ -45,6 +56,12 @@ def load_qrels(path: str) -> dict[str, list[str]]:
 
 
 def main():
+    """Merge the four input sources and write `nq-questions.jsonl`.
+
+    Reads queries, correct answers, target (incorrect) answers, and
+    gold qrels; sorts queries by trailing test-ID integer; writes
+    one merged record per line.
+    """
     # --- Load original queries ----------------------------------------------
     queries: dict[str, str] = {}
     with open(os.path.join(_DATA_DIR, 'original-datasets', 'nq', 'queries.jsonl')) as f:

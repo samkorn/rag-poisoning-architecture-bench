@@ -20,7 +20,7 @@ from src.experiments.orchestrator import build_experiment_matrix, is_experiment_
 
 
 class ExperimentMatrixUnitTests(unittest.TestCase):
-    """Properties of the 12-experiment matrix produced by build_experiment_matrix()."""
+    """Properties of the matrix produced by `build_experiment_matrix`."""
 
     @classmethod
     def setUpClass(cls):
@@ -28,9 +28,11 @@ class ExperimentMatrixUnitTests(unittest.TestCase):
         cls.experiments = build_experiment_matrix()
 
     def test_count_is_twelve(self):
+        """Matrix produces exactly 12 experiment configs."""
         self.assertEqual(len(self.experiments), 12)
 
     def test_ordering_is_vanilla_agentic_rlm_madam(self):
+        """Architectures are emitted vanilla -> agentic -> rlm -> madam."""
         archs = [e.architecture for e in self.experiments]
 
         first_agentic = archs.index('agentic')
@@ -45,6 +47,7 @@ class ExperimentMatrixUnitTests(unittest.TestCase):
         self.assertLess(last_rlm, first_madam, "RLM should come before MADAM")
 
     def test_three_experiments_per_architecture(self):
+        """Each architecture covers exactly three attack cells."""
         counts: dict[str, int] = {}
         for e in self.experiments:
             counts[e.architecture] = counts.get(e.architecture, 0) + 1
@@ -55,27 +58,32 @@ class ExperimentMatrixUnitTests(unittest.TestCase):
         self.assertEqual(counts.get('madam'), 3)
 
     def test_rlm_has_no_k(self):
+        """RLM cells have `k=None` (full topic context, not top-K)."""
         rlm_exps = [e for e in self.experiments if e.architecture == 'rlm']
         self.assertGreater(len(rlm_exps), 0)
         for e in rlm_exps:
             self.assertIsNone(e.k, f"RLM {e.experiment_id} should have k=None, got {e.k}")
 
     def test_non_rlm_uses_k_10(self):
+        """Vanilla, Agentic, and MADAM cells all use `k=10`."""
         for arch in ('vanilla', 'agentic', 'madam'):
             k_vals = {e.k for e in self.experiments if e.architecture == arch}
             self.assertEqual(k_vals, {10}, f"{arch}: expected K={{10}}, got {k_vals}")
 
     def test_every_arch_covers_all_attacks(self):
+        """Every architecture has cells for clean, naive, and CorruptRAG-AK."""
         expected_attacks = {'clean', 'naive', 'corruptrag_ak'}
         for arch in ('vanilla', 'agentic', 'rlm', 'madam'):
             attacks = {e.attack_type for e in self.experiments if e.architecture == arch}
             self.assertEqual(attacks, expected_attacks, f"{arch}: missing attacks")
 
     def test_experiment_ids_are_unique(self):
+        """No duplicate `experiment_id` values across the matrix."""
         ids = [e.experiment_id for e in self.experiments]
         self.assertEqual(len(ids), len(set(ids)), "Duplicate experiment IDs")
 
     def test_experiment_ids_match_arch_attack_pattern(self):
+        """`experiment_id` is `<arch>_<attack>` with no extra suffix."""
         valid_archs = {'vanilla', 'agentic', 'rlm', 'madam'}
         valid_attacks = {'clean', 'naive', 'corruptrag_ak'}
 
@@ -93,6 +101,7 @@ class ExperimentConfigSerializationUnitTests(unittest.TestCase):
     """ExperimentConfig.to_dict() round-trips through dict reconstruction."""
 
     def test_round_trip_preserves_all_fields(self):
+        """`to_dict` round-trip is lossless and JSON-safe."""
         for config in build_experiment_matrix():
             d = config.to_dict()
 
@@ -112,7 +121,7 @@ class ExperimentConfigSerializationUnitTests(unittest.TestCase):
 
 
 class IsExperimentCompleteUnitTests(unittest.TestCase):
-    """File-count-based completion detection in orchestrator.is_experiment_complete()."""
+    """File-count completion detection in `is_experiment_complete`."""
 
     def setUp(self):
         super().setUp()
@@ -135,34 +144,41 @@ class IsExperimentCompleteUnitTests(unittest.TestCase):
         super().tearDown()
 
     def _write_result(self, filename: str, payload: dict) -> None:
+        """Write a per-question result JSON into the per-test temp dir."""
         os.makedirs(self.exp_dir, exist_ok=True)
         with open(os.path.join(self.exp_dir, filename), 'w') as f:
             json.dump(payload, f)
 
     def test_missing_dir_is_incomplete(self):
+        """No experiment directory at all -> incomplete."""
         self.assertFalse(is_experiment_complete(self.exp_id, self.n_queries))
 
     def test_empty_dir_is_incomplete(self):
+        """Directory exists but has no result files -> incomplete."""
         os.makedirs(self.exp_dir)
         self.assertFalse(is_experiment_complete(self.exp_id, self.n_queries))
 
     def test_partial_results_is_incomplete(self):
+        """Fewer than `n_queries` result JSONs present -> incomplete."""
         for i in range(5):
             self._write_result(f'test{i}.json', {'question_id': f'test{i}'})
         self.assertFalse(is_experiment_complete(self.exp_id, self.n_queries))
 
     def test_summary_json_does_not_count_toward_completion(self):
+        """`summary.json` is excluded from the file count."""
         for i in range(5):
             self._write_result(f'test{i}.json', {'question_id': f'test{i}'})
         self._write_result('summary.json', {'completed': 5})
         self.assertFalse(is_experiment_complete(self.exp_id, self.n_queries))
 
     def test_full_results_is_complete(self):
+        """Exactly `n_queries` result JSONs present -> complete."""
         for i in range(self.n_queries):
             self._write_result(f'test{i}.json', {'question_id': f'test{i}'})
         self.assertTrue(is_experiment_complete(self.exp_id, self.n_queries))
 
     def test_excess_results_still_complete(self):
+        """More than `n_queries` result JSONs is still complete."""
         for i in range(self.n_queries):
             self._write_result(f'test{i}.json', {'question_id': f'test{i}'})
         self._write_result('test_extra.json', {'question_id': 'extra'})

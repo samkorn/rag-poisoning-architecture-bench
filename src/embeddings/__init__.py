@@ -1,3 +1,3 @@
-"""Contriever-based document embedding, FAISS index construction, and retrieval."""
+"""Contriever document embedding, FAISS index building, and retrieval."""
 
 from .embeddings import Embedder

@@ -136,11 +136,14 @@ def _run(script: str, *args: str, env_overrides: dict | None = None,
 
 
 class ScriptHelpUnitTests(unittest.TestCase):
-    """Every script's ``--help`` exits 0, prints a Usage block, and does
-    not bleed shell code into the output (guards against the
-    hardcoded-line-number bug that used to live in ``show_help``)."""
+    """Every script's `--help` exits 0, prints a Usage block, and stays clean.
+
+    Guards against the hardcoded-line-number bug that used to live
+    in `show_help` and would bleed shell code into the help output.
+    """
 
     def test_help_exits_zero_and_shows_usage(self):
+        """`--help` exits 0, prints `Usage:`, no shell-source leakage."""
         for script in ALL_SCRIPTS:
             with self.subTest(script=script):
                 result = _run(script, '--help')
@@ -151,6 +154,7 @@ class ScriptHelpUnitTests(unittest.TestCase):
                 self.assertNotIn('show_help()', result.stdout)
 
     def test_help_short_flag(self):
+        """`-h` exits 0 and prints a `Usage:` block (mirrors `--help`)."""
         for script in ALL_SCRIPTS:
             with self.subTest(script=script):
                 result = _run(script, '-h')
@@ -162,6 +166,7 @@ class ScriptUnknownArgUnitTests(unittest.TestCase):
     """Unknown flags exit 2 with a clear message on stderr."""
 
     def test_unknown_flag_rejected(self):
+        """Unknown flags exit 2 and emit `unknown arg` on stderr."""
         for script in ALL_SCRIPTS:
             with self.subTest(script=script):
                 result = _run(script, '--not-a-real-flag')
@@ -177,6 +182,7 @@ class ScriptRunAllMutexUnitTests(unittest.TestCase):
     """``run_all.sh`` rejects combined flags that don't make sense together."""
 
     def test_resume_and_analysis_only_mutex(self):
+        """`--resume` + `--analysis-only` exit 2 with a mutex error."""
         result = _run('run_all.sh', '--resume', '--analysis-only')
         self.assertEqual(result.returncode, 2)
         self.assertIn('mutually exclusive', result.stderr)
@@ -203,6 +209,7 @@ class ScriptDryRunGoldenUnitTests(unittest.TestCase):
         self._tmpdir.cleanup()
 
     def _assert_golden(self, script: str, *args: str, golden_name: str) -> None:
+        """Run a script and assert its stdout matches a pinned golden file."""
         result = _run(
             script, *args,
             env_overrides={'REPO_ROOT': str(self._fake_root)},
@@ -222,6 +229,7 @@ class ScriptDryRunGoldenUnitTests(unittest.TestCase):
         )
 
     def test_dry_run_matches_golden(self):
+        """Each `--dry-run` script matches its golden file byte-for-byte."""
         for script in DRY_RUN_SCRIPTS:
             with self.subTest(script=script):
                 self._assert_golden(
@@ -257,24 +265,28 @@ class ScriptPrereqFailureUnitTests(unittest.TestCase):
         self._tmpdir.cleanup()
 
     def _run_against_fake_root(self, script: str, *args: str):
+        """Run a script with `REPO_ROOT` pointed at the fake tempdir."""
         return _run(
             script, *args,
             env_overrides={'REPO_ROOT': str(self._fake_root)},
         )
 
     def test_prepare_embeddings_errors_on_missing_corpus(self):
+        """Missing corpus prereq exits 1 and points at `prepare_data.sh`."""
         result = self._run_against_fake_root('prepare_embeddings.sh')
         self.assertEqual(result.returncode, 1)
         self.assertIn('prerequisite corpus missing', result.stderr)
         self.assertIn('scripts/prepare_data.sh', result.stderr)
 
     def test_run_analysis_errors_on_missing_results(self):
+        """Missing experiment results exit 1, point at `download_data.sh`."""
         result = self._run_against_fake_root('run_analysis.sh')
         self.assertEqual(result.returncode, 1)
         self.assertIn('prerequisite missing', result.stderr)
         self.assertIn('scripts/download_data.sh', result.stderr)
 
     def test_generate_paper_errors_on_missing_paper_dir(self):
+        """Missing `paper/` directory exits 1 with a clear stderr message."""
         result = self._run_against_fake_root('generate_paper.sh')
         self.assertEqual(result.returncode, 1)
         self.assertIn('paper directory not found', result.stderr)
@@ -319,6 +331,7 @@ class ScriptConfirmationPromptUnitTests(unittest.TestCase):
 
     def _run_with_stdin(self, script: str, *args: str, stdin: str = '',
                         ) -> subprocess.CompletedProcess:
+        """Run a script with `stdin`, fake `REPO_ROOT`, and fake `HOME`."""
         env = os.environ.copy()
         env.update({
             'REPO_ROOT': str(self._fake_root),
@@ -343,7 +356,7 @@ class ScriptConfirmationPromptUnitTests(unittest.TestCase):
     #     fired and got accepted (or was bypassed by --force)
 
     def test_run_analysis_force_skips_prompt(self):
-        """``--force`` proceeds past the prompt without reading stdin."""
+        """`--force` proceeds past the prompt without reading stdin."""
         result = self._run_with_stdin('run_analysis.sh', '--force')
         self.assertEqual(result.returncode, 0, result.stderr)
         # No WARNING text means the prompt block was skipped entirely.
@@ -368,12 +381,14 @@ class ScriptConfirmationPromptUnitTests(unittest.TestCase):
     # ---- run_experiments.sh ---------------------------------------------
 
     def test_run_experiments_force_skips_prompt(self):
+        """`--force` skips the prompt for `run_experiments.sh --noise`."""
         result = self._run_with_stdin('run_experiments.sh', '--force', '--noise')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn('WARNING', result.stdout)
         self.assertNotIn('Aborted', result.stdout)
 
     def test_run_experiments_n_aborts(self):
+        """Piping `n` aborts `run_experiments.sh --noise` cleanly."""
         result = self._run_with_stdin('run_experiments.sh', '--noise', stdin='n\n')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('WARNING', result.stdout)
@@ -402,12 +417,14 @@ class ScriptConfirmationPromptUnitTests(unittest.TestCase):
     # test is worth.
 
     def test_run_all_n_aborts(self):
+        """Piping `n` aborts `run_all.sh --analysis-only` after the warning."""
         result = self._run_with_stdin('run_all.sh', '--analysis-only', stdin='n\n')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('analysis-only pipeline', result.stdout)  # warning fired
         self.assertIn('Aborted', result.stdout)
 
     def test_run_all_warning_is_mode_aware(self):
+        """`run_all.sh` warning text differs across modes."""
         default_out = self._run_with_stdin('run_all.sh', stdin='n\n').stdout
         resume_out = self._run_with_stdin('run_all.sh', '--resume', stdin='n\n').stdout
         analysis_only_out = self._run_with_stdin(
@@ -423,6 +440,7 @@ class ScriptConfirmationPromptUnitTests(unittest.TestCase):
         self.assertNotIn('$300-450', analysis_only_out)
 
     def test_run_all_dry_run_skips_prompt(self):
+        """`run_all.sh --dry-run` bypasses the confirmation prompt."""
         result = self._run_with_stdin('run_all.sh', '--dry-run')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn('WARNING', result.stdout)
@@ -432,6 +450,7 @@ class ScriptShellcheckUnitTests(unittest.TestCase):
     """Optional static analysis. Skipped when shellcheck isn't installed."""
 
     def test_shellcheck_clean(self):
+        """`shellcheck` exits 0 across every script in `ALL_SCRIPTS`."""
         shellcheck = shutil.which('shellcheck')
         if shellcheck is None:
             # shellcheck-py is in requirements.txt and provides venv/bin/shellcheck;
@@ -474,6 +493,7 @@ class ScriptDownloadDataUnitTests(unittest.TestCase):
         self._tmpdir.cleanup()
 
     def test_refuses_clobber_when_data_populated(self):
+        """Populated dest dirs exit 1 with a `--force` pointer."""
         result = _run(
             'download_data.sh',
             env_overrides={'REPO_ROOT': str(self._fake_root)},

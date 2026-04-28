@@ -1,4 +1,4 @@
-"""Local data-pipeline scripts: parse helpers (unit) and end-to-end runs (integration).
+"""Local data-pipeline tests — parse helpers + end-to-end runs.
 
 Integration tests are split across multiple `TestCase` classes — one
 per script under exercise — for two reasons:
@@ -53,10 +53,11 @@ class DataPipelineInvariantUnitTests(unittest.TestCase):
     """Cross-module invariants the rest of the pipeline depends on."""
 
     def test_poisoned_doc_id_format_matches_detector(self):
-        """The IDs constructed by create_poisoned_datasets must trip is_poison_doc_id.
+        """Poisoned IDs from `create_poisoned_datasets` trip detection.
 
-        If anyone renames the prefix in one place but not the other, every
-        downstream metric (ASR, poison rank) silently corrupts.
+        If anyone renames the prefix in one place but not the
+        other, every downstream metric (ASR, poison rank) silently
+        corrupts.
         """
         from src.experiments.experiment import is_poison_doc_id
 
@@ -77,7 +78,7 @@ class DataPipelineInvariantUnitTests(unittest.TestCase):
             )
 
     def test_attack_to_corpus_keys_cover_all_attacks(self):
-        """ATTACK_TO_CORPUS must cover every attack type the matrix generates."""
+        """`ATTACK_TO_CORPUS` covers every attack type the matrix uses."""
         from src.experiments.experiment import ATTACK_TO_CORPUS
         from src.experiments.orchestrator import build_experiment_matrix
 
@@ -99,6 +100,7 @@ class CreateQuestionsIntegrationTests(unittest.TestCase):
         _data_present_or_skip()
 
     def test_produces_expected_count_and_keys(self):
+        """`create_questions.main()` emits pinned row count + key set."""
         import src.data.create_questions as cq
 
         tmp_path = tempfile.NamedTemporaryFile(mode='w', suffix='.jsonl', delete=False).name
@@ -106,6 +108,7 @@ class CreateQuestionsIntegrationTests(unittest.TestCase):
             original_open = open
 
             def patched_open(path, *args, **kwargs):
+                """Redirect writes of `nq-questions.jsonl` to a tempfile."""
                 mode = args[0] if args else kwargs.get('mode', 'r')
                 if isinstance(path, str) and path.endswith('nq-questions.jsonl') and 'w' in mode:
                     return original_open(tmp_path, *args, **kwargs)
@@ -148,6 +151,7 @@ class FilterGoldQuestionsIntegrationTests(unittest.TestCase):
         _data_present_or_skip()
 
     def test_produces_expected_count_and_keys(self):
+        """`filter_gold_questions.main()` writes the pinned filtered count."""
         import src.data.filter_gold_questions as fg
 
         tmp_path = tempfile.NamedTemporaryFile(mode='w', suffix='.jsonl', delete=False).name
@@ -183,6 +187,7 @@ class CreatePoisonedDatasetsIntegrationTests(unittest.TestCase):
         _data_present_or_skip()
 
     def test_parses_inputs_and_constructs_valid_poisoned_doc(self):
+        """Inputs parse; a synthesized poisoned doc trips the detector."""
         from src.data.create_poisoned_datasets import (
             ORIGINAL_NQ_DIR,
             EXPERIMENT_DIR,
@@ -228,6 +233,7 @@ class BuildVectorIndexesIntegrationTests(unittest.TestCase):
         _data_present_or_skip()
 
     def test_inputs_and_outputs_present(self):
+        """Pre-built embedding pickles and FAISS indexes both exist on disk."""
         from src.embeddings.build_vector_indexes import VECTOR_STORE_DIR
 
         self.assertTrue(os.path.isdir(VECTOR_STORE_DIR))
@@ -249,6 +255,7 @@ class VectorStoreRetrievalIntegrationTests(unittest.TestCase):
         _data_present_or_skip()
 
     def test_loads_and_retrieves_top_k(self):
+        """Original `VectorStore` loads and returns top-K hits."""
         from src.embeddings.vector_store import VectorStore
 
         vs = VectorStore(corpus_type='original')

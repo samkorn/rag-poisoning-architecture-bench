@@ -21,8 +21,29 @@ from src.embeddings.vector_store import VectorStore
 
 
 class VanillaRAG(QASystem):
+    """Single-shot retrieve-then-generate RAG baseline.
+
+    Retrieves `top_k` passages from a `VectorStore` and concatenates
+    them as context for one LLM call. No tool use, no debate, no
+    iteration — the simplest possible RAG and the experimental
+    control against which the other three architectures are compared.
+
+    Attributes:
+        vector_store: Shared `VectorStore` instance used for
+            retrieval, loaded once per architecture instance.
+    """
 
     def __init__(self, corpus_type: str, top_k: int = 5, **kwargs):
+        """Initialize a Vanilla RAG instance and load its `VectorStore`.
+
+        Args:
+            corpus_type: Which corpus to retrieve from
+                (`original`, `naive_poisoned`, `corruptrag_ak_poisoned`).
+            top_k: Number of passages to retrieve per question.
+                Defaults to 5; the bench runs at `top_k=10`.
+            **kwargs: Forwarded to `QASystem.__init__` (model,
+                reasoning controls, system prompt, etc.).
+        """
         super().__init__(
             architecture='vanilla_rag',
             corpus_type=corpus_type,
@@ -32,6 +53,18 @@ class VanillaRAG(QASystem):
         self.vector_store = VectorStore(self.corpus_type)
 
     def _run(self, question: str, query_id: str) -> str:
+        """Retrieve top-K passages and answer the question in one LLM call.
+
+        Args:
+            question: Natural-language question.
+            query_id: NQ test query ID, or `None` for ad-hoc
+                questions. Forwarded to `VectorStore.retrieve` so
+                the precomputed query-embedding fast path can be
+                used when available.
+
+        Returns:
+            The model's free-form answer.
+        """
         retrieved_document_results = self.vector_store.retrieve(
             question=question,
             top_k=self.top_k,

@@ -17,8 +17,9 @@ Output:
     `{query_id, correct_answer}` record per line.
 
 Notes:
-    Uses a raw `openai` client rather than `src.architectures.utils.execute_llm_call`
-    to keep the Modal image minimal — the util module pulls in
+    Uses a raw `openai` client rather than
+    `src.architectures.utils.execute_llm_call` to keep the Modal
+    image minimal — the util module pulls in
     pydantic/tenacity/qa_system, which aren't needed for a single
     one-shot extraction call.
 """
@@ -56,6 +57,21 @@ Answer:
 
 @app.function(secrets=[modal.Secret.from_name('openai-rag-poisoning')])
 def craft_correct_answer(question_text: str, document_texts: str) -> str:
+    """Extract the shortest factual correct answer from gold passages.
+
+    Sends a one-shot prompt to the configured `MODEL_ID` and
+    returns whatever the model emits as the answer. `temperature=0`
+    for determinism.
+
+    Args:
+        question_text: Natural-language question.
+        document_texts: Newline-joined gold passages providing the
+            evidence the model should ground its answer in.
+
+    Returns:
+        Short answer string (typically a name, date, number, or
+        short phrase).
+    """
     # Raw openai client (not src.architectures.utils.execute_llm_call): keeps the
     # Modal image minimal — the util pulls in pydantic/tenacity/qa_system and is
     # shaped for the experiment loop (Responses API, structured output, reasoning).
@@ -73,6 +89,14 @@ def craft_correct_answer(question_text: str, document_texts: str) -> str:
 
 @app.local_entrypoint()
 def main():
+    """Generate correct answers for every NQ test query and write them to disk.
+
+    Loads queries, the corpus, and qrels; pairs each query with
+    its gold passages; fans `craft_correct_answer.starmap` out
+    across Modal workers; writes the resulting `(query_id,
+    correct_answer)` records to
+    `experiment-datasets/nq-correct-answers.jsonl`.
+    """
     # Parse original dataset
     print("Parsing NQ dataset...")
     queries: dict[str, str] = {}
