@@ -6,7 +6,6 @@ os.environ['HF_HUB_DISABLE_PROGRESS_BARS'] = '1'
 import torch
 import transformers
 import numpy as np
-from dotenv import load_dotenv; load_dotenv()
 from transformers import AutoTokenizer, AutoModel
 from sklearn.metrics.pairwise import cosine_similarity
 
@@ -14,8 +13,8 @@ from sklearn.metrics.pairwise import cosine_similarity
 class Embedder:
     def __init__(self, gpu: bool = False, model_path: str = 'facebook/contriever'):
         self.device = torch.device('cuda' if gpu else 'cpu')
-        self.tokenizer = AutoTokenizer.from_pretrained(model_path, token=os.environ.get('HF_TOKEN'))
-        self.model = AutoModel.from_pretrained(model_path, token=os.environ.get('HF_TOKEN')).to(self.device)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_path)
+        self.model = AutoModel.from_pretrained(model_path).to(self.device)
         self.model.eval()
 
     def _mean_pooling(self, token_embeddings: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:

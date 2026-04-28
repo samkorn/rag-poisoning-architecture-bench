@@ -111,7 +111,6 @@ EXPERIMENTS_DIR = f'{RESULTS_DIR}/experiments'
 
 secrets = [
     modal.Secret.from_name('openai-rag-poisoning'),
-    modal.Secret.from_name('huggingface-rag-poisoning'),
 ]
 
 

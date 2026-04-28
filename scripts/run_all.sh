@@ -18,9 +18,10 @@
 # you want a fresh figure/table pass without rerunning Modal.
 #
 # Usage:
-#   scripts/run_all.sh                   # env -> data -> embeddings -> launch experiments
+#   scripts/run_all.sh                   # env -> data -> embeddings -> launch experiments (prompts)
 #   scripts/run_all.sh --resume          # analysis + paper (after Modal runs are done)
 #   scripts/run_all.sh --analysis-only   # env -> download Zenodo data -> analysis + paper
+#   scripts/run_all.sh --force           # skip the y/N confirmation prompt
 #   scripts/run_all.sh --dry-run         # print what every downstream script would do
 #   scripts/run_all.sh --help
 
@@ -32,12 +33,14 @@ show_help() {
 
 resume=0
 analysis_only=0
+force=0
 DRY_RUN=0
 for arg in "$@"; do
     case "${arg}" in
         --help|-h)       show_help; exit 0 ;;
         --resume)        resume=1 ;;
         --analysis-only) analysis_only=1 ;;
+        --force|-f)      force=1 ;;
         --dry-run)       DRY_RUN=1 ;;
         *)               echo "ERROR: unknown arg '${arg}'" >&2; show_help >&2; exit 2 ;;
     esac
@@ -60,10 +63,63 @@ if [[ "${DRY_RUN}" == "1" ]]; then
     dry_args=(--dry-run)
 fi
 
+# Chained downstream scripts that have their own confirmation prompts get
+# --force here so the outer prompt covers them and the user isn't prompted
+# multiple times.
+force_args=(--force)
+
+# ---------------------------------------------------------------------------
+# Confirmation prompt — covers the entire downstream chain
+# ---------------------------------------------------------------------------
+if [[ "${force}" != "1" && "${DRY_RUN}" != "1" ]]; then
+    if [[ "${resume}" == "1" ]]; then
+        cat <<'EOF'
+
+This will run the analysis pipeline (resume mode):
+    - Execute analysis/analysis.ipynb (overwrites figures + tables)
+    - Compile paper/paper.tex
+
+Cost:    free (local computation only)
+Runtime: ~10 minutes
+EOF
+    elif [[ "${analysis_only}" == "1" ]]; then
+        cat <<'EOF'
+
+This will run the analysis-only pipeline:
+    - Set up environment
+    - Download experiment results from Zenodo
+    - Execute analysis/analysis.ipynb (overwrites figures + tables)
+    - Compile paper/paper.tex
+
+Cost:    free (no API calls)
+Runtime: ~12 minutes
+EOF
+    else
+        cat <<'EOF'
+
+WARNING: Full pipeline regen — spends real money and takes a long time.
+    - Set up environment + prep data + prep embeddings (local, ~hours)
+    - Launch experiment orchestrator on Modal (--detach)
+
+Cost:    ~$300-450 OpenAI + ~$5-10 Modal GPU
+Runtime: over 24 hours wall time end-to-end
+         (this script returns after launching Modal jobs;
+          re-invoke with --resume after they complete)
+EOF
+    fi
+    echo
+    echo "Use --dry-run to preview commands. Use --force to skip this prompt."
+    read -r -p "Continue? [y/N]: " reply
+    case "${reply}" in
+        y|Y|yes|YES) ;;
+        *) echo "Aborted."; exit 0 ;;
+    esac
+fi
+
 if [[ "${resume}" == "1" ]]; then
     echo "==> Resume: analysis + paper"
     if [[ "${DRY_RUN}" == "0" ]]; then
-        "${SCRIPTS}/run_analysis.sh"
+        "${SCRIPTS}/run_analysis.sh" "${force_args[@]}"
         "${SCRIPTS}/generate_paper.sh"
     else
         echo "    \$ ${SCRIPTS}/run_analysis.sh    (no --dry-run support; would execute)"
@@ -93,7 +149,11 @@ if [[ "${analysis_only}" == "1" ]]; then
     run_or_echo "${SCRIPTS}/download_data.sh"
     echo
     echo "==> [3/4] run_analysis.sh"
-    run_or_echo "${SCRIPTS}/run_analysis.sh"
+    if [[ "${DRY_RUN}" == "0" ]]; then
+        "${SCRIPTS}/run_analysis.sh" "${force_args[@]}"
+    else
+        echo "    \$ ${SCRIPTS}/run_analysis.sh --force  (no --dry-run support; would execute)"
+    fi
     echo
     echo "==> [4/4] generate_paper.sh"
     run_or_echo "${SCRIPTS}/generate_paper.sh"
@@ -119,7 +179,7 @@ echo "==> [3/4] prepare_embeddings.sh"
 
 echo
 echo "==> [4/4] run_experiments.sh --experiments (orchestrator, detached)"
-"${SCRIPTS}/run_experiments.sh" --experiments "${dry_args[@]+"${dry_args[@]}"}"
+"${SCRIPTS}/run_experiments.sh" --experiments "${force_args[@]}" "${dry_args[@]+"${dry_args[@]}"}"
 
 cat <<'EOF'
 
