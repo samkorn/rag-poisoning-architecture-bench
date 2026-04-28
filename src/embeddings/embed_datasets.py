@@ -1,9 +1,9 @@
-"""Computes Contriever embeddings for the NQ corpus, queries, and poisoned passages on Modal GPUs.
+"""Compute Contriever embeddings for NQ on Modal GPUs.
 
-One Modal app with three entrypoints — `embed_corpus`, `embed_queries`,
-`embed_poisoned_docs` — that mount `Embedder` from
-`src/embeddings/embeddings.py` and write pickled embedding dicts to
-`src/data/vector-store/`.
+A single Modal app whose `main` entrypoint embeds queries, the
+original NQ corpus, the naive-poisoned passages, and the
+CorruptRAG-AK poisoned passages — fanning each set out across L40S
+GPU containers via `embed_text_batch.map`.
 
 Prerequisites:
     * Modal credentials (`~/.modal.toml`).
@@ -13,9 +13,7 @@ Prerequisites:
       via `download_model()`).
 
 Usage:
-    modal run src/embeddings/embed_datasets.py::embed_corpus
-    modal run src/embeddings/embed_datasets.py::embed_queries
-    modal run src/embeddings/embed_datasets.py::embed_poisoned_docs
+    modal run src/embeddings/embed_datasets.py
 
 Output:
     Pickled `{doc_id: np.ndarray}` dicts in `src/data/vector-store/`:
@@ -65,14 +63,21 @@ EMBED_BATCH_SIZE = 1024
     timeout=60 * 10, # 10 minutes max
 )
 def download_model():
-    """Download Contriever to the volume once. No-ops if already cached.
+    """Download Contriever to the Modal Volume once.
 
-    facebook/contriever is a public model and does not require auth, so the
-    from_pretrained calls below are unauthenticated. If you ever see an HF
-    rate-limit (429) or authentication warning during the one-time download,
-    the fix is to add a Modal Secret containing HF_TOKEN to this function's
-    decorator and pass token=os.environ.get('HF_TOKEN') to both from_pretrained
-    calls.
+    No-ops when `config.json` already exists on the volume. Saves
+    both the tokenizer and the model weights so subsequent
+    `embed_text_batch` invocations can load locally without
+    contacting HF.
+
+    Notes:
+        `facebook/contriever` is public and does not require auth,
+        so the `from_pretrained` calls run unauthenticated. If a
+        future Modal run hits an HF rate-limit (429) or
+        authentication warning during this one-time download, add a
+        Modal Secret with `HF_TOKEN` and pass
+        `token=os.environ.get('HF_TOKEN')` into both
+        `from_pretrained` calls.
     """
     if os.path.exists(f'{MODEL_DIR}/config.json'):
         print("Model already cached on volume.")
@@ -92,7 +97,18 @@ def download_model():
     timeout=60, # 1 minute max
 )
 def embed_text_batch(texts: list[str]) -> list[np.ndarray]:
-    """Embed a batch of text using the Contriever model."""
+    """Embed a batch of text on a Modal L40S GPU.
+
+    One invocation handles up to `EMBED_BATCH_SIZE` (1024) texts.
+    `main` shards larger inputs across many parallel containers via
+    `.map`.
+
+    Args:
+        texts: Sentences or passages to embed.
+
+    Returns:
+        One numpy embedding per input text, in input order.
+    """
     from embeddings import Embedder
     embedder = Embedder(gpu=True, model_path=MODEL_DIR)
     return embedder.embed(texts)
@@ -100,7 +116,14 @@ def embed_text_batch(texts: list[str]) -> list[np.ndarray]:
 
 @app.local_entrypoint()
 def main():
-    """Embed all datasets."""
+    """Embed every dataset and write pickled `{id: vector}` dicts to disk.
+
+    Runs four embedding passes — queries, original corpus,
+    naive-poisoned passages, CorruptRAG-AK poisoned passages —
+    each batched at `EMBED_BATCH_SIZE` and fanned out via
+    `embed_text_batch.map`. Triggers `download_model.remote()`
+    first so the model is on the volume before workers start.
+    """
     _EMBED_DIR = os.path.dirname(os.path.abspath(__file__))
     _DATA_DIR = os.path.join(_EMBED_DIR, '..', 'data')
 
