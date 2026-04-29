@@ -33,6 +33,12 @@
     urlcolor=blue!60!black,
 }
 
+% ---- Line-breaking tolerances ----
+% Allow up to 2em of inter-word stretch on lines that would otherwise
+% overflow; suppress underfull warnings below mild-but-invisible badness.
+\setlength{\emergencystretch}{2em}
+\hbadness=2500
+
 % ---- Custom commands ----
 \newcommand{\metric}[1]{\texttt{#1}}
 
