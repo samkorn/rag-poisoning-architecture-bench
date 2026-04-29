@@ -4,7 +4,7 @@ This directory holds the results-analysis notebook and its committed outputs.
 
 ## Files
 
-- `analysis.ipynb` — the analysis notebook. Committed without cell outputs.
+- `analysis.ipynb` — the analysis notebook. Committed with cell outputs so figures and tables render inline on GitHub.
 - `figures/` — PDF + PNG figures referenced by the paper. Committed.
 - `intermediate/merged_results.parquet` — cached join of all experiment results + judge labels + human labels. Gitignored. Regenerated on every notebook run.
 - `human_labels.csv` — hand-labeled ground-truth subset. Gitignored; symlinked from workspace.
