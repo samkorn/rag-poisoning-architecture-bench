@@ -232,7 +232,7 @@ For primary reporting, we merge UC into CORRECT and UI into INCORRECT, yielding 
 
 \paragraph{Result conditioning.} When analyzing results under attack conditions, we apply conditioning to control for confounding factors. We report four variants, applied primarily to ASR but applicable to other metrics as well. \emph{Unconditional} results include all questions in the analysis set. \emph{Poison-conditioned} results restrict to questions where the poison document was actually retrieved, isolating the generation-stage effect of the attack from retrieval failures---particularly relevant for naive injection, where only ${\sim}$61.5\% of poisoned documents are retrieved for vanilla, agentic, and MADAM architectures. \emph{Clean-conditioned} results restrict to questions the architecture answers correctly under the clean baseline, filtering out questions the system cannot answer regardless of attack and providing the fairest cross-architecture comparison. This conditioning is especially important for MADAM-RAG, whose high non-answer rate on clean inputs would otherwise mask its vulnerability. \emph{Fully conditioned} results apply both filters simultaneously, restricting to questions where the poison was retrieved and the architecture answers correctly on clean---the purest measure of whether an attack fools a functioning system that actually encounters the poisoned document.
 
-\begin{table}[h]
+\begin{table}[ht]
 \centering
 \small
 \begin{tabular}{@{}ll@{}}
@@ -277,7 +277,7 @@ Experiments are executed on Modal cloud infrastructure. The orchestrator runs as
 
 \paragraph{CorruptRAG-AK.} Under the adversarial attack, architectural differences become more apparent. Table~\ref{tab:asr_crak} reports ASR across all four conditioning variants. Clean-conditioned ASR---the fairest cross-architecture comparison, restricted to questions each architecture answers correctly on clean inputs---ranges from 81.9\% for vanilla RAG to 24.4\% for RLM, a spread of nearly 58 percentage points. Vanilla RAG is heavily compromised: the attack succeeds on more than four out of five answerable questions. Agentic RAG shows substantial resistance at 43.8\%, a 38 percentage point improvement over vanilla. RLM achieves the strongest robustness at 24.4\%, resisting the attack on more than three-quarters of answerable questions. MADAM-RAG's clean-conditioned ASR of 45.5\% is comparable to agentic's 43.8\%, suggesting that when our implementation actually produces a definitive answer, its vulnerability is similar to agentic RAG despite their very different architectures.
 
-\begin{table}[h]
+\begin{table}[ht]
 \centering
 \caption{Attack success rate (\%) under CorruptRAG-AK across conditioning variants with 95\% bootstrap CIs.}
 \label{tab:asr_crak}
@@ -291,7 +291,7 @@ These differences are substantial: most pairwise architecture gaps under Corrupt
 
 \paragraph{Naive injection.} Under the non-optimized attack, overall ASR is substantially lower (Table~\ref{tab:asr_naive}). This reduction is driven in part by lower poison retrieval rates: naive-injected documents are retrieved in only ${\sim}$61.5\% of questions for vanilla, agentic, and MADAM architectures, compared to ${\sim}$100\% for CorruptRAG-AK. RLM's broader context construction results in notably higher naive poison retrieval (${\sim}$94.5\%), as the naive document is more likely to appear among the topically-retrieved passages.
 
-\begin{table}[h]
+\begin{table}[ht]
 \centering
 \caption{Attack success rate (\%) under naive injection across conditioning variants with 95\% bootstrap CIs.}
 \label{tab:asr_naive}
@@ -352,7 +352,7 @@ The large ASR gap between naive injection and CorruptRAG-AK (Section~\ref{sec:as
 
 \paragraph{Paired question-level analysis.} To understand whether CorruptRAG-AK's advantage is systematic or driven by a small number of questions, we compare outcomes at the individual question level. For each of the 921 questions and each architecture, we have two outcomes: did the naive attack succeed, and did CorruptRAG-AK succeed? This produces four categories per question: both attacks succeed (the question is vulnerable regardless of attack sophistication), only CorruptRAG-AK succeeds (the adversarial enhancements made the difference), only naive succeeds (CorruptRAG-AK's modifications occasionally backfire), or neither succeeds (the question is robust to both). Table~\ref{tab:paired_contingency} presents the full breakdown. If CorruptRAG-AK's higher ASR were driven by a handful of extra questions, the ``CRAK-only'' column would be small. Instead, CRAK-only successes vastly outnumber naive-only successes across all four architectures, by ratios ranging from 2.3:1 (RLM, MADAM) to 47:1 (vanilla). This confirms that CorruptRAG-AK systematically converts naive failures into attack successes. The ``Both'' column also reveals that vanilla RAG has 292 questions vulnerable to both attacks---roughly a third of the question set---while RLM's 613 ``Neither'' questions (66.6\%) confirm its broad resistance.
 
-\begin{table}[h]
+\begin{table}[ht]
 \centering
 \caption{Paired question-level attack outcomes. For each architecture and question, we classify whether the naive attack succeeded, CorruptRAG-AK succeeded, both, or neither.}
 \label{tab:paired_contingency}
@@ -371,14 +371,14 @@ Because these questions have both poisons in context, the only difference is the
 
 \paragraph{Results.} Figure~\ref{fig:decomposition} and Table~\ref{tab:decomposition} present the decomposition for each architecture.
 
-\begin{figure}[h]
+\begin{figure}[ht]
 \centering
 \includegraphics[width=0.75\textwidth]{asr_gap_decomposition.pdf}
 \caption{Decomposition of the ASR gap between naive injection and CorruptRAG-AK into retrieval and content effects. Retrieval effect (blue) captures the contribution of higher poison retrieval rates; content effect (orange) captures the additional persuasiveness of adversarial framing.}
 \label{fig:decomposition}
 \end{figure}
 
-\begin{table}[h]
+\begin{table}[ht]
 \centering
 \caption{Decomposition of the CorruptRAG-AK ASR advantage over naive injection (percentage points) with 95\% bootstrap confidence intervals.}
 \label{tab:decomposition}
