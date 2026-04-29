@@ -4,6 +4,7 @@
 
 - Paper: paper/paper.pdf
 - Data: https://doi.org/10.5281/zenodo.19582217
+- Blog Post: https://open.substack.com/pub/sammykaytv/p/your-rag-architecture-matters-more
 
 License: MIT  ·  Python 3.12  ·  DOI: https://doi.org/10.5281/zenodo.19582217
 
