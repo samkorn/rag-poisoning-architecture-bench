@@ -1,9 +1,11 @@
 <h1 align="center">Architecture Matters<br><sub>Comparing RAG Systems under Knowledge Base Poisoning</sub></h1>
 
 <p align="center">
-  <a href="paper/paper.pdf">Paper</a>
+  <a href="paper/paper.pdf">Full Paper</a>
   &nbsp;·&nbsp;
   <a href="https://doi.org/10.5281/zenodo.19582217">Data</a>
+  &nbsp;·&nbsp;
+  <a href="https://open.substack.com/pub/sammykaytv/p/your-rag-architecture-matters-more?r=7dgen&utm_campaign=post&utm_medium=web&showWelcomeOnShare=true">Blog Post</a>
 </p>
 
 <p align="center">
