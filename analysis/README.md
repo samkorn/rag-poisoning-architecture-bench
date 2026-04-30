@@ -15,6 +15,10 @@ This directory holds the results-analysis notebook and its committed outputs.
 > Every file in `analysis/figures/` and `paper/tables/` is overwritten in
 > place. After running, review `git diff` and commit deliberately.
 
+### Font dependency
+
+Figures use **Latin Modern Roman** to match the paper's Computer Modern body font. Install the OTF font family from <https://www.gust.org.pl/projects/e-foundry/latin-modern/download> if you want regenerated figures to be visually identical to the committed ones. Without it, matplotlib falls back to STIX Two Text (close to CM, ships with macOS) or DejaVu Serif. Data and layout are unaffected by the fallback — only the typeface differs.
+
 ```bash
 venv/bin/jupyter nbconvert --to notebook --execute analysis/analysis.ipynb --output /tmp/analysis_out.ipynb
 ```

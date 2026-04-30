@@ -33,6 +33,12 @@
     urlcolor=blue!60!black,
 }
 
+% ---- Line-breaking tolerances ----
+% Allow up to 2em of inter-word stretch on lines that would otherwise
+% overflow; suppress underfull warnings below mild-but-invisible badness.
+\setlength{\emergencystretch}{2em}
+\hbadness=2500
+
 % ---- Custom commands ----
 \newcommand{\metric}[1]{\texttt{#1}}
 
@@ -150,7 +156,7 @@ All four architectures use GPT-5-mini as the backbone LLM, ensuring that perform
 
 \begin{figure}[ht!]
 \centering
-\includegraphics[width=0.75\linewidth]{vanilla-rag-architecture-diagram.png}
+\includegraphics[width=0.75\linewidth]{vanilla-rag-architecture-diagram.pdf}
 \caption{Vanilla RAG: single-pass retrieve-then-generate. Retrieved passages are concatenated into the prompt for a single LLM call, with no explicit conflict-handling mechanism.}
 \label{fig:arch_vanilla}
 \end{figure}
@@ -159,32 +165,32 @@ All four architectures use GPT-5-mini as the backbone LLM, ensuring that perform
 
 \begin{figure}[ht!]
 \centering
-\includegraphics[width=0.75\linewidth]{agentic-rag-architecture-diagram.png}
+\includegraphics[width=0.75\linewidth]{agentic-rag-architecture-diagram.pdf}
 \caption{Agentic RAG: a PydanticAI agent operates in an open-ended tool-use loop over \texttt{search\_knowledge\_base} and \texttt{get\_document\_by\_id}, deciding autonomously when to search, reformulate queries, or stop.}
 \label{fig:arch_agentic}
 \end{figure}
 
 \paragraph{MADAM-RAG.} We reimplement the multi-agent debate architecture described by \citet{wang2025madamrag}. The pipeline proceeds in three stages: (1)~each of the $K{=}10$ retrieved documents is assigned to a separate LLM agent, which independently generates an answer from its assigned document; (2)~agents engage in multi-round debate, viewing each other's responses and revising their positions until convergence or a maximum round limit; (3)~a separate aggregator synthesizes the final answer from the debate transcript. Our implementation diverges from the original paper in two respects. First, we use GPT-5-mini via API rather than the local HuggingFace models described in the paper. Second, agents see raw peer responses between rounds rather than aggregator-generated summaries---a behavior inherited from the authors' published code, which diverges from the paper's description. The aggregator is used only for convergence detection and final answer synthesis. Additionally, debate agents execute sequentially rather than in parallel, contributing to higher latency that is an implementation artifact rather than an intrinsic architectural property.
 
-Two caveats apply to our MADAM-RAG results. First, the original architecture was designed for local HuggingFace models; our API-based reimplementation may understate MADAM-RAG's potential under its intended operating conditions. Second, our implementation achieves only 56.6\% clean accuracy with a 41.4\% non-answer rate, substantially below the performance reported in the original work. This baseline fragility means attack results may overstate MADAM-RAG's vulnerability, as the system frequently fails to answer regardless of adversarial conditions. We present both caveats explicitly and discuss their implications in depth in Section~\ref{sec:limitations}.
-
 \begin{figure}[ht!]
 \centering
-\includegraphics[width=0.75\linewidth]{madam-rag-architecture-diagram.png}
+\includegraphics[width=0.75\linewidth]{madam-rag-architecture-diagram.pdf}
 \caption{MADAM-RAG: each of the $K{=}10$ retrieved documents is assigned to a separate LLM agent; agents generate initial answers independently, engage in multi-round debate over each other's responses, and a separate aggregator synthesizes the final answer from the debate transcript.}
 \label{fig:arch_madam}
 \end{figure}
 
-\paragraph{Recursive Language Model (RLM).} The RLM architecture~\citep{zhang2025rlm} operates fundamentally differently from the three RAG variants. RLMs are designed to process complete topical context through recursive decomposition rather than reasoning over a fixed number of retrieved passages. To provide input consistent with this design, we construct the full topical context for each question: we retrieve the top-100 passages with Contriever, collect the unique Wikipedia article titles from these results, and include \emph{all} passages from each identified article. This simulates the scenario where all topically relevant documents are available to the system at once---the intended RLM use case---rather than artificially constraining it to the same $K{=}10$ window used by the RAG architectures. Documents are sorted by article title (grouping passages from the same article together), then by numerical document ID within each group. The poisoned document is embedded and retrieved alongside legitimate passages, landing at the end of its article group. This typically yields substantially more context than the 10 passages seen by the RAG-based architectures.
+Two caveats apply to our MADAM-RAG results. First, the original architecture was designed for local HuggingFace models; our API-based reimplementation may understate MADAM-RAG's potential under its intended operating conditions. Second, our implementation achieves only 56.6\% clean accuracy with a 41.4\% non-answer rate, substantially below the performance reported in the original work. This baseline fragility means attack results may overstate MADAM-RAG's vulnerability, as the system frequently fails to answer regardless of adversarial conditions. We present both caveats explicitly and discuss their implications in depth in Section~\ref{sec:limitations}.
 
-The RLM processes this context through its REPL-based recursive decomposition, writing code to inspect, filter, and compare passages and launching recursive sub-calls on specific portions. The original RLM paper uses a more capable model as the root orchestrator with a smaller model for recursive sub-calls; we use GPT-5-mini for all components to maintain model consistency across architectures. Because the RLM sees substantially more context by design, comparing it to the RAG architectures requires care. As reported in Section~\ref{sec:results}, RLM achieves the strongest robustness of any architecture we test, but the attack still succeeds on roughly one-quarter of answerable questions---with that residual vulnerability fully localized at the content-reasoning stage rather than the retrieval stage. Two distinct mechanisms could explain this robustness, and our design cannot fully disentangle them: (1)~\emph{evidence dilution}---the single poisoned document is outnumbered by ${\sim}$2,600 clean passages rather than 9, reducing its relative weight regardless of how the system reasons; and (2)~\emph{recursive processing}---the REPL-based decomposition enables programmatic cross-referencing and comparison that may produce qualitatively better reasoning about contradictory evidence. These hypotheses are not mutually exclusive; both likely contribute. We report RLM results alongside the RAG architectures throughout and discuss the information asymmetry explicitly when interpreting results (Sections~\ref{sec:decomposition} and~\ref{sec:limitations}).
+\paragraph{Recursive Language Model (RLM).} The RLM architecture~\citep{zhang2025rlm} operates fundamentally differently from the three RAG variants. RLMs are designed to process complete topical context through recursive decomposition rather than reasoning over a fixed number of retrieved passages. To provide input consistent with this design, we construct the full topical context for each question: we retrieve the top-100 passages with Contriever, collect the unique Wikipedia article titles from these results, and include \emph{all} passages from each identified article. This simulates the scenario where all topically relevant documents are available to the system at once---the intended RLM use case---rather than artificially constraining it to the same $K{=}10$ window used by the RAG architectures. Documents are sorted by article title (grouping passages from the same article together), then by numerical document ID within each group. The poisoned document is embedded and retrieved alongside legitimate passages, landing at the end of its article group. This typically yields substantially more context than the 10 passages seen by the RAG-based architectures. The RLM processes this context through its REPL-based recursive decomposition, writing code to inspect, filter, and compare passages and launching recursive sub-calls on specific portions. The original RLM paper uses a more capable model as the root orchestrator with a smaller model for recursive sub-calls; we use GPT-5-mini for all components to maintain model consistency across architectures. 
 
 \begin{figure}[ht!]
 \centering
-\includegraphics[width=0.75\linewidth]{rlm-architecture-diagram.png}
+\includegraphics[width=0.75\linewidth]{rlm-architecture-diagram.pdf}
 \caption{Recursive Language Model (RLM): the full topical context (all passages from articles hit by a top-100 Contriever retrieval, typically ${\sim}$2,600 passages) is processed via REPL-based recursive decomposition, writing code to inspect, filter, and compare passages and launching recursive sub-calls on specific portions.}
 \label{fig:arch_rlm}
 \end{figure}
+
+Because the RLM sees substantially more context by design, comparing it to the RAG architectures requires care. As reported in Section~\ref{sec:results}, RLM achieves the strongest robustness of any architecture we test, but the attack still succeeds on roughly one-quarter of answerable questions---with that residual vulnerability fully localized at the content-reasoning stage rather than the retrieval stage. Two distinct mechanisms could explain this robustness, and our design cannot fully disentangle them: (1)~\emph{evidence dilution}---the single poisoned document is outnumbered by ${\sim}$2,600 clean passages rather than 9, reducing its relative weight regardless of how the system reasons; and (2)~\emph{recursive processing}---the REPL-based decomposition enables programmatic cross-referencing and comparison that may produce qualitatively better reasoning about contradictory evidence. These hypotheses are not mutually exclusive; both likely contribute. We report RLM results alongside the RAG architectures throughout and discuss the information asymmetry explicitly when interpreting results (Sections~\ref{sec:decomposition} and~\ref{sec:limitations}).
 
 \subsection{Attack Types}
 \label{sec:attacks}
@@ -232,7 +238,7 @@ For primary reporting, we merge UC into CORRECT and UI into INCORRECT, yielding 
 
 \paragraph{Result conditioning.} When analyzing results under attack conditions, we apply conditioning to control for confounding factors. We report four variants, applied primarily to ASR but applicable to other metrics as well. \emph{Unconditional} results include all questions in the analysis set. \emph{Poison-conditioned} results restrict to questions where the poison document was actually retrieved, isolating the generation-stage effect of the attack from retrieval failures---particularly relevant for naive injection, where only ${\sim}$61.5\% of poisoned documents are retrieved for vanilla, agentic, and MADAM architectures. \emph{Clean-conditioned} results restrict to questions the architecture answers correctly under the clean baseline, filtering out questions the system cannot answer regardless of attack and providing the fairest cross-architecture comparison. This conditioning is especially important for MADAM-RAG, whose high non-answer rate on clean inputs would otherwise mask its vulnerability. \emph{Fully conditioned} results apply both filters simultaneously, restricting to questions where the poison was retrieved and the architecture answers correctly on clean---the purest measure of whether an attack fools a functioning system that actually encounters the poisoned document.
 
-\begin{table}[h]
+\begin{table}[ht]
 \centering
 \small
 \begin{tabular}{@{}ll@{}}
@@ -277,7 +283,7 @@ Experiments are executed on Modal cloud infrastructure. The orchestrator runs as
 
 \paragraph{CorruptRAG-AK.} Under the adversarial attack, architectural differences become more apparent. Table~\ref{tab:asr_crak} reports ASR across all four conditioning variants. Clean-conditioned ASR---the fairest cross-architecture comparison, restricted to questions each architecture answers correctly on clean inputs---ranges from 81.9\% for vanilla RAG to 24.4\% for RLM, a spread of nearly 58 percentage points. Vanilla RAG is heavily compromised: the attack succeeds on more than four out of five answerable questions. Agentic RAG shows substantial resistance at 43.8\%, a 38 percentage point improvement over vanilla. RLM achieves the strongest robustness at 24.4\%, resisting the attack on more than three-quarters of answerable questions. MADAM-RAG's clean-conditioned ASR of 45.5\% is comparable to agentic's 43.8\%, suggesting that when our implementation actually produces a definitive answer, its vulnerability is similar to agentic RAG despite their very different architectures.
 
-\begin{table}[h]
+\begin{table}[ht]
 \centering
 \caption{Attack success rate (\%) under CorruptRAG-AK across conditioning variants with 95\% bootstrap CIs.}
 \label{tab:asr_crak}
@@ -291,7 +297,7 @@ These differences are substantial: most pairwise architecture gaps under Corrupt
 
 \paragraph{Naive injection.} Under the non-optimized attack, overall ASR is substantially lower (Table~\ref{tab:asr_naive}). This reduction is driven in part by lower poison retrieval rates: naive-injected documents are retrieved in only ${\sim}$61.5\% of questions for vanilla, agentic, and MADAM architectures, compared to ${\sim}$100\% for CorruptRAG-AK. RLM's broader context construction results in notably higher naive poison retrieval (${\sim}$94.5\%), as the naive document is more likely to appear among the topically-retrieved passages.
 
-\begin{table}[h]
+\begin{table}[ht]
 \centering
 \caption{Attack success rate (\%) under naive injection across conditioning variants with 95\% bootstrap CIs.}
 \label{tab:asr_naive}
@@ -352,7 +358,7 @@ The large ASR gap between naive injection and CorruptRAG-AK (Section~\ref{sec:as
 
 \paragraph{Paired question-level analysis.} To understand whether CorruptRAG-AK's advantage is systematic or driven by a small number of questions, we compare outcomes at the individual question level. For each of the 921 questions and each architecture, we have two outcomes: did the naive attack succeed, and did CorruptRAG-AK succeed? This produces four categories per question: both attacks succeed (the question is vulnerable regardless of attack sophistication), only CorruptRAG-AK succeeds (the adversarial enhancements made the difference), only naive succeeds (CorruptRAG-AK's modifications occasionally backfire), or neither succeeds (the question is robust to both). Table~\ref{tab:paired_contingency} presents the full breakdown. If CorruptRAG-AK's higher ASR were driven by a handful of extra questions, the ``CRAK-only'' column would be small. Instead, CRAK-only successes vastly outnumber naive-only successes across all four architectures, by ratios ranging from 2.3:1 (RLM, MADAM) to 47:1 (vanilla). This confirms that CorruptRAG-AK systematically converts naive failures into attack successes. The ``Both'' column also reveals that vanilla RAG has 292 questions vulnerable to both attacks---roughly a third of the question set---while RLM's 613 ``Neither'' questions (66.6\%) confirm its broad resistance.
 
-\begin{table}[h]
+\begin{table}[ht]
 \centering
 \caption{Paired question-level attack outcomes. For each architecture and question, we classify whether the naive attack succeeded, CorruptRAG-AK succeeded, both, or neither.}
 \label{tab:paired_contingency}
@@ -371,14 +377,14 @@ Because these questions have both poisons in context, the only difference is the
 
 \paragraph{Results.} Figure~\ref{fig:decomposition} and Table~\ref{tab:decomposition} present the decomposition for each architecture.
 
-\begin{figure}[h]
+\begin{figure}[ht]
 \centering
 \includegraphics[width=0.75\textwidth]{asr_gap_decomposition.pdf}
 \caption{Decomposition of the ASR gap between naive injection and CorruptRAG-AK into retrieval and content effects. Retrieval effect (blue) captures the contribution of higher poison retrieval rates; content effect (orange) captures the additional persuasiveness of adversarial framing.}
 \label{fig:decomposition}
 \end{figure}
 
-\begin{table}[h]
+\begin{table}[ht]
 \centering
 \caption{Decomposition of the CorruptRAG-AK ASR advantage over naive injection (percentage points) with 95\% bootstrap confidence intervals.}
 \label{tab:decomposition}
@@ -824,6 +830,6 @@ According to the provided source, Marilyn is an English feminine given name form
 All Correct Answers: [a blend of the English names Mary and Lynn, derived from the Latin name Marinus]. Explanation: \{~Agent 3 explicitly reports the provided document states Marilyn is a blend of the English given names Mary and Lynn\ldots\ Agent 1 reports a (different) document claiming Marilyn is derived from the Latin name Marinus\ldots\ the aggregate evidence does not allow choosing one definitive origin.~\}
 \end{tcolorbox}
 
-\noindent This example shows RLM producing an explicit contradiction detection (CORRECT\_WITH\_DETECTION rather than its more common quiet correctness pattern), calling out the conflicting claim as ``isolated/garbled.'' MADAM's aggregator again presents both answers as equally valid despite the 7-to-1 agent ratio favoring the correct origin.
+\noindent This example shows RLM producing an explicit contradiction detection (CD rather than its more common quiet correctness pattern), calling out the conflicting claim as ``isolated/garbled.'' MADAM's aggregator again presents both answers as equally valid despite the 7-to-1 agent ratio favoring the correct origin.
 
 \end{document}

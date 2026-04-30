@@ -62,6 +62,8 @@ Expect roughly **$280–440** in OpenAI spend for experiments, **$70–130** for
 
 > **Notebook regeneration warning.** `scripts/run_analysis.sh` executes `analysis/analysis.ipynb` in place, overwriting every file in `analysis/figures/` and `paper/tables/` — these are committed deliverables, not scratch. Review `git diff` before committing.
 
+> **Font dependency for figure regeneration.** Figures use Latin Modern Roman to match the paper's body font. Install the OTF family from [GUST](https://www.gust.org.pl/projects/e-foundry/latin-modern/download) before re-running the notebook for visually-identical output; without it, matplotlib falls back to STIX Two Text or DejaVu Serif (data and layout unchanged).
+
 ## Repository structure
 
 ```
