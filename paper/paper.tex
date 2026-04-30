@@ -368,11 +368,11 @@ The large ASR gap between naive injection and CorruptRAG-AK (Section~\ref{sec:as
 
 \paragraph{Decomposition methodology.} We decompose the total ASR gap between naive and CorruptRAG-AK into two components. The \emph{content effect} captures how much of the gap is associated with CorruptRAG-AK's adversarial framing being more persuasive once retrieved---measured directly on questions where both poisons are in context, so retrieval is held constant. The \emph{retrieval effect} captures the residual: the additional attack success consistent with CorruptRAG-AK's higher poison retrieval rate---i.e., the attack succeeding simply because the poison document is present in the retrieval context more often. Formally, let $\mathcal{Q}_\cap$ denote the set of questions where both the naive and CorruptRAG-AK poison documents are retrieved in their respective experiments. The \emph{content effect} is measured directly as the ASR difference on this paired subset:
 \[
-\text{Content Effect} = \text{ASR}_{\text{CRAK}}(\mathcal{Q}_\cap) - \text{ASR}_{\text{naive}}(\mathcal{Q}_\cap)
+\text{Content Effect} = \text{ASR}_{\text{CRAK}}(\mathcal{Q}_\cap) - \text{ASR}_{\text{naive}}(\mathcal{Q}_\cap).
 \]
 Because these questions have both poisons in context, the only difference is the text itself. The \emph{retrieval effect} is the residual:
 \[
-\text{Retrieval Effect} = \underbrace{(\text{ASR}_{\text{CRAK}} - \text{ASR}_{\text{naive}})}_{\text{Total Gap}} - \text{Content Effect}
+\text{Retrieval Effect} = \underbrace{(\text{ASR}_{\text{CRAK}} - \text{ASR}_{\text{naive}})}_{\text{Total Gap}} - \text{Content Effect}.
 \] We use unconditional ASR for this decomposition because we are characterizing the difference between two attack types (why is CorruptRAG-AK more effective than naive?) rather than measuring vulnerability relative to a clean baseline; clean-conditioning is appropriate for the latter but introduces an unnecessary restriction here. The decomposition is qualitatively identical under clean-conditioning---the retrieval--content gradient from the unconditional analysis is preserved (Appendix~\ref{app:decomposition_cc}). We emphasize that this decomposition is observational---we decompose the \emph{observed} ASR gap into a component associated with differential retrieval and a residual that we interpret as the content effect, but we do not claim a causal mechanism.
 
 \paragraph{Results.} Figure~\ref{fig:decomposition} and Table~\ref{tab:decomposition} present the decomposition for each architecture.
