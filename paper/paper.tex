@@ -156,7 +156,7 @@ All four architectures use GPT-5-mini as the backbone LLM, ensuring that perform
 
 \begin{figure}[ht!]
 \centering
-\includegraphics[width=0.75\linewidth]{vanilla-rag-architecture-diagram.png}
+\includegraphics[width=0.75\linewidth]{vanilla-rag-architecture-diagram.pdf}
 \caption{Vanilla RAG: single-pass retrieve-then-generate. Retrieved passages are concatenated into the prompt for a single LLM call, with no explicit conflict-handling mechanism.}
 \label{fig:arch_vanilla}
 \end{figure}
@@ -165,7 +165,7 @@ All four architectures use GPT-5-mini as the backbone LLM, ensuring that perform
 
 \begin{figure}[ht!]
 \centering
-\includegraphics[width=0.75\linewidth]{agentic-rag-architecture-diagram.png}
+\includegraphics[width=0.75\linewidth]{agentic-rag-architecture-diagram.pdf}
 \caption{Agentic RAG: a PydanticAI agent operates in an open-ended tool-use loop over \texttt{search\_knowledge\_base} and \texttt{get\_document\_by\_id}, deciding autonomously when to search, reformulate queries, or stop.}
 \label{fig:arch_agentic}
 \end{figure}
@@ -174,7 +174,7 @@ All four architectures use GPT-5-mini as the backbone LLM, ensuring that perform
 
 \begin{figure}[ht!]
 \centering
-\includegraphics[width=0.75\linewidth]{madam-rag-architecture-diagram.png}
+\includegraphics[width=0.75\linewidth]{madam-rag-architecture-diagram.pdf}
 \caption{MADAM-RAG: each of the $K{=}10$ retrieved documents is assigned to a separate LLM agent; agents generate initial answers independently, engage in multi-round debate over each other's responses, and a separate aggregator synthesizes the final answer from the debate transcript.}
 \label{fig:arch_madam}
 \end{figure}
@@ -185,7 +185,7 @@ Two caveats apply to our MADAM-RAG results. First, the original architecture was
 
 \begin{figure}[ht!]
 \centering
-\includegraphics[width=0.75\linewidth]{rlm-architecture-diagram.png}
+\includegraphics[width=0.75\linewidth]{rlm-architecture-diagram.pdf}
 \caption{Recursive Language Model (RLM): the full topical context (all passages from articles hit by a top-100 Contriever retrieval, typically ${\sim}$2,600 passages) is processed via REPL-based recursive decomposition, writing code to inspect, filter, and compare passages and launching recursive sub-calls on specific portions.}
 \label{fig:arch_rlm}
 \end{figure}
