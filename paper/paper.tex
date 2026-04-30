@@ -1,5 +1,9 @@
 \documentclass[11pt]{article}
 
+% Match output PDF version to the included architecture diagrams (PDF 1.7),
+% otherwise pdflatex emits "found PDF version <1.7>, but at most <1.5> allowed".
+\pdfminorversion=7
+
 % ---- Packages ----
 \usepackage[margin=1in]{geometry}
 \usepackage{amsmath,amssymb}
@@ -54,13 +58,17 @@
 \begin{document}
 \maketitle
 
-% ============================================================
+% ======================================================================
+% Abstract
+% ======================================================================
 
 \begin{abstract}
 Retrieval-Augmented Generation (RAG) systems are vulnerable to knowledge base poisoning, yet existing attacks have been evaluated almost exclusively against vanilla retrieve-then-generate pipelines. Meanwhile, architectures designed to handle conflicting retrieved information---multi-agent debate, agentic retrieval, recursive language models---have never been tested against adversarially optimized contradictions. We bridge this gap by evaluating four RAG architectures (vanilla RAG, agentic RAG, MADAM-RAG, and Recursive Language Models) under controlled single-document ($N{=}1$) poisoning on 921 question-answer pairs from the Natural Questions dataset. We test each architecture against a clean baseline, naive injection, and CorruptRAG-AK, an adversarial attack whose meta-epistemic framing directly targets credibility assessment. We find that architecture is a high-impact variable in adversarial robustness: under CorruptRAG-AK, attack success rates range from 81.9\% (vanilla) to 24.4\% (RLM)---a spread of nearly 58 percentage points across architectures with comparable clean accuracy (${\sim}$92\%). Decomposing the gap between naive and adversarial attacks, we find that once the poisoned document is retrieved, adversarial framing---not retrieval optimization---drives the majority of CorruptRAG-AK's advantage over naive injection for three of four architectures, localizing the cross-architecture vulnerability at the content-reasoning stage. Our MADAM-RAG reimplementation shows the highest rate of apparent contradiction detection among all architectures, though our LLM judge substantially over-identifies this behavior (${\sim}$48.5\% precision), so reported rates are upper bounds. Regardless of detection, this implementation cannot resolve contradictions reliably, producing a 41.4\% non-answer rate even on clean inputs---though implementation divergences from the original work may contribute to this weakness. We additionally introduce a seven-category behavioral taxonomy that captures contradiction detection, hedging, and failure modes beyond binary accuracy. Code, data, and analysis notebooks are publicly available.\footnote{Code: \url{https://github.com/samkorn/rag-poisoning-architecture-bench}. Data: \url{https://doi.org/10.5281/zenodo.19582217}.}
 \end{abstract}
 
-% ============================================================
+% ======================================================================
+% Introduction
+% ======================================================================
 
 \section{Introduction}
 \label{sec:intro}
@@ -94,7 +102,9 @@ The results reveal that architecture is a high-impact, underexplored variable in
     \item We introduce a behavioral taxonomy for evaluating RAG systems under adversarial conditions that captures contradiction detection, hedging, and failure modes beyond binary accuracy.
 \end{enumerate}
 
-% ============================================================
+% ======================================================================
+% Related Work
+% ======================================================================
 
 \section{Related Work}
 \label{sec:related}
@@ -125,7 +135,9 @@ KBLaM~\citep{wang2025kblam} takes a different approach entirely, encoding knowle
 
 Our work sits at the intersection of these two bodies of work. The poisoning literature has demonstrated effective attacks but tested them only against vanilla pipelines. The conflict-handling literature has developed architectures with explicit mechanisms for navigating contradictory evidence but evaluated them only against organic conflicts. We provide the first evaluation of agentic, multi-agent, and recursive architectures against adversarially optimized poisoning---using CorruptRAG-AK's meta-epistemic framing, which directly targets the credibility assessment mechanisms these architectures are designed to provide.
 
-% ============================================================
+% ======================================================================
+% Methodology
+% ======================================================================
 
 \section{Methodology}
 \label{sec:methodology}
@@ -170,7 +182,7 @@ All four architectures use GPT-5-mini as the backbone LLM, ensuring that perform
 \label{fig:arch_agentic}
 \end{figure}
 
-\paragraph{MADAM-RAG.} We reimplement the multi-agent debate architecture described by \citet{wang2025madamrag}. The pipeline proceeds in three stages: (1)~each of the $K{=}10$ retrieved documents is assigned to a separate LLM agent, which independently generates an answer from its assigned document; (2)~agents engage in multi-round debate, viewing each other's responses and revising their positions until convergence or a maximum round limit; (3)~a separate aggregator synthesizes the final answer from the debate transcript. Our implementation diverges from the original paper in two respects. First, we use GPT-5-mini via API rather than the local HuggingFace models described in the paper. Second, agents see raw peer responses between rounds rather than aggregator-generated summaries---a behavior inherited from the authors' published code, which diverges from the paper's description. The aggregator is used only for convergence detection and final answer synthesis. Additionally, debate agents execute sequentially rather than in parallel, contributing to higher latency that is an implementation artifact rather than an intrinsic architectural property.
+\paragraph{MADAM-RAG.} We reimplement the multi-agent debate architecture described by \citet{wang2025madamrag}. The pipeline proceeds in three stages: (1)~each of the $K{=}10$ retrieved documents is assigned to a separate LLM agent, which independently generates an answer from its assigned document; (2)~agents engage in multi-round debate, viewing each other's responses and revising their positions until convergence or a maximum round limit; (3)~a separate aggregator synthesizes the final answer from the debate transcript. Our implementation diverges from the original paper in two respects. First, we use GPT-5-mini via API rather than the local HuggingFace models described in the paper. Second, agents see raw peer responses between rounds rather than aggregator-generated summaries---a behavior inherited from the authors' published code, which diverges from the paper's description. The aggregator is used only for convergence detection and final answer synthesis. Additionally, it is worth noting that, as in the original MADAM-RAG implementation, our debate agents execute sequentially rather than in parallel, contributing to higher latency which is an implementation artifact rather than an intrinsic architectural property.
 
 \begin{figure}[ht!]
 \centering
@@ -264,7 +276,9 @@ GPT-5-mini is a reasoning model with temperature fixed at 1.0 (the only value th
 
 Experiments are executed on Modal cloud infrastructure. The orchestrator runs as a detached Modal container, dispatching batches of 99 worker containers per experiment. Per-question results are written to Modal Volumes, providing robust failure recovery. Total compute across all 12 experiments is approximately 359 hours, with MADAM-RAG accounting for 259 hours (72\%) due to sequential agent execution. Total OpenAI API cost across all experiments, judge evaluation, noise filtering, and poison generation is estimated at approximately \$344 (see Appendix~\ref{app:api_cost}). Total Modal infrastructure cost was approximately \$120.
 
-% ============================================================
+% ======================================================================
+% Results
+% ======================================================================
 
 \section{Results}
 \label{sec:results}
@@ -368,11 +382,11 @@ The large ASR gap between naive injection and CorruptRAG-AK (Section~\ref{sec:as
 
 \paragraph{Decomposition methodology.} We decompose the total ASR gap between naive and CorruptRAG-AK into two components. The \emph{content effect} captures how much of the gap is associated with CorruptRAG-AK's adversarial framing being more persuasive once retrieved---measured directly on questions where both poisons are in context, so retrieval is held constant. The \emph{retrieval effect} captures the residual: the additional attack success consistent with CorruptRAG-AK's higher poison retrieval rate---i.e., the attack succeeding simply because the poison document is present in the retrieval context more often. Formally, let $\mathcal{Q}_\cap$ denote the set of questions where both the naive and CorruptRAG-AK poison documents are retrieved in their respective experiments. The \emph{content effect} is measured directly as the ASR difference on this paired subset:
 \[
-\text{Content Effect} = \text{ASR}_{\text{CRAK}}(\mathcal{Q}_\cap) - \text{ASR}_{\text{naive}}(\mathcal{Q}_\cap)
+\text{Content Effect} = \text{ASR}_{\text{CRAK}}(\mathcal{Q}_\cap) - \text{ASR}_{\text{naive}}(\mathcal{Q}_\cap).
 \]
 Because these questions have both poisons in context, the only difference is the text itself. The \emph{retrieval effect} is the residual:
 \[
-\text{Retrieval Effect} = \underbrace{(\text{ASR}_{\text{CRAK}} - \text{ASR}_{\text{naive}})}_{\text{Total Gap}} - \text{Content Effect}
+\text{Retrieval Effect} = \underbrace{(\text{ASR}_{\text{CRAK}} - \text{ASR}_{\text{naive}})}_{\text{Total Gap}} - \text{Content Effect}.
 \] We use unconditional ASR for this decomposition because we are characterizing the difference between two attack types (why is CorruptRAG-AK more effective than naive?) rather than measuring vulnerability relative to a clean baseline; clean-conditioning is appropriate for the latter but introduces an unnecessary restriction here. The decomposition is qualitatively identical under clean-conditioning---the retrieval--content gradient from the unconditional analysis is preserved (Appendix~\ref{app:decomposition_cc}). We emphasize that this decomposition is observational---we decompose the \emph{observed} ASR gap into a component associated with differential retrieval and a residual that we interpret as the content effect, but we do not claim a causal mechanism.
 
 \paragraph{Results.} Figure~\ref{fig:decomposition} and Table~\ref{tab:decomposition} present the decomposition for each architecture.
@@ -418,7 +432,9 @@ MADAM-RAG's results throughout the preceding sections require dedicated analysis
 
 \paragraph{Takeaways.} Our MADAM-RAG implementation fails differently from the other architectures. It shows the highest judge-reported contradiction detection rate (Section~\ref{sec:detection}), though this metric's low precision (${\sim}$48.5\%) means the true rate is substantially lower. It strips adversarial framing language from its outputs and avoids confident errors---but it cannot reliably resolve detected conflicts in favor of the correct answer, and its baseline failure rate is too high for the attack results to support strong conclusions about the architecture's inherent vulnerability. The implementation caveats noted in Section~\ref{sec:methodology} further limit interpretation. We discuss the implications for multi-agent debate architectures in Section~\ref{sec:madam_unrealized} and outline concrete next steps in Section~\ref{sec:future_work}.
 
-% ============================================================
+% ======================================================================
+% Discussion
+% ======================================================================
 
 \section{Discussion}
 \label{sec:discussion}
@@ -448,7 +464,9 @@ Our MADAM-RAG reimplementation's results, while disappointing in absolute terms,
 
 This suggests a specific hypothesis for future work: a revised MADAM-like architecture with improved aggregation logic---for example, weighting agent responses by consistency with the majority or incorporating explicit credibility signals---might preserve the debate structure's detection and filtering strengths while addressing its resolution weakness. We frame this as a hypothesis rather than a finding, since our MADAM-RAG implementation deviates from the original in ways that may contribute to the aggregation failures we observe.
 
-% ============================================================
+% ======================================================================
+% Limitations
+% ======================================================================
 
 \section{Limitations}
 \label{sec:limitations}
@@ -473,14 +491,18 @@ This suggests a specific hypothesis for future work: a revised MADAM-like archit
 
 \paragraph{Noise filtering.} The 229 questions excluded as ambiguous, outdated, or multi-answer were identified by an LLM classifier, not by manual review, and we did not verify whether this set is systematically harder or easier than the retained questions. If excluded questions are disproportionately difficult, reported clean accuracies are inflated; if disproportionately easy, reported ASRs are inflated. Since the same exclusion set applies to all architectures and conditions, relative comparisons are unlikely to be affected, but absolute rates should be interpreted with this caveat.
 
-% ============================================================
+% ======================================================================
+% Future Work
+% ======================================================================
 
 \section{Future Work}
 \label{sec:future_work}
 
 Several extensions follow naturally from the findings and limitations identified in this study. \textbf{Defensive prompting} is the most immediate: evaluating a uniform defensive system prompt across all four architectures would test whether lightweight prompt-based defenses interact with architecture and whether they can close the agentic--RLM robustness gap. \textbf{MADAM-RAG aggregation refinement} would test whether improved prompt construction for the aggregation stage---for example, explicitly instructing the aggregator to weight agent responses by inter-agent consistency---can translate the debate mechanism's detection strengths into correct conflict resolution. \textbf{Matched-information ablation} would disentangle RLM's recursive processing from its context volume advantage. Because ${\sim}$90\% of RLM's full-topic contexts exceed GPT-5-mini's 128k-token window, this requires either a long-context model with a 1M-token window (e.g., Claude Sonnet 4.6 or Gemini 3 Flash) as the backbone for a non-recursive baseline receiving the same documents, or a document-subsampling design that fits full-topic context within 128k tokens for a subset of questions. A complementary approach would vary $K$ for vanilla and agentic RAG ($K{=}10$, 50, 100) to measure the marginal effect of additional evidence without recursive processing. \textbf{Additional attack types}, including PoisonedRAG's retrieval-optimized approach and CorruptRAG-AS, would test whether the architectural vulnerability profiles we observe are specific to CorruptRAG-AK's meta-epistemic framing or generalize across attack strategies. \textbf{Additional architectures}, particularly Astute RAG~\citep{wang2024astute} and KBLaM~\citep{wang2025kblam}, would broaden the architectural comparison---KBLaM's retrieval-free knowledge integration mechanism presents an especially interesting case for adversarial evaluation. \textbf{Additional datasets} beyond Natural Questions---including multi-hop benchmarks like HotpotQA and domain-specific corpora---would test whether our findings generalize across question types and knowledge domains. Finally, \textbf{varying $N$ and $K$} would characterize how architectural robustness responds to both increasing attacker strength (multiple poisoned documents per question) and varying retrieval depth (changing the ratio of poisoned to clean documents in context).
 
-% ============================================================
+% ======================================================================
+% Conclusion
+% ======================================================================
 
 \section{Conclusion}
 \label{sec:conclusion}
@@ -491,18 +513,24 @@ The most actionable implication for practitioners deploying RAG in adversary-rel
 
 We release all code and analysis notebooks at \url{https://github.com/samkorn/rag-poisoning-architecture-bench}, with experiment data and results archived at \url{https://doi.org/10.5281/zenodo.19582217}, to support replication and extension.
 
-% ============================================================
+% ======================================================================
+% Acknowledgments
+% ======================================================================
 
 \section*{Acknowledgments}
 
 This work was conducted independently without institutional support; all compute and API costs were self-funded by the author. I thank the authors of MADAM-RAG \citep{wang2025madamrag} for the public release of their reference implementation, which informed our reimplementation. Code implementation was assisted by Claude Code (Anthropic); all experimental design, analysis, and interpretation are the author's.
 
-% ============================================================
+% ======================================================================
+% Bibliography
+% ======================================================================
 
 \bibliographystyle{plainnat}
 \bibliography{references}
 
-% ============================================================
+% ======================================================================
+% APPENDIX
+% ======================================================================
 
 \appendix
 \makeatletter
@@ -516,6 +544,11 @@ This work was conducted independently without institutional support; all compute
 \makeatother
 
 \clearpage
+
+% ======================================================================
+% Judge Prompts
+% ======================================================================
+
 \section{Judge Prompts}
 \label{app:judge_prompts}
 
@@ -561,6 +594,11 @@ Target-present determination is produced as a boolean metadata flag within the s
 
 
 \clearpage
+
+% ======================================================================
+% Attack Generation Prompts and Examples
+% ======================================================================
+
 \section{Attack Generation Prompts and Examples}
 \label{app:attack_prompts}
 
@@ -624,6 +662,11 @@ Revised Corpus:
 
 
 \clearpage
+
+% ======================================================================
+% Judge Validation Details
+% ======================================================================
+
 \section{Judge Validation Details}
 \label{app:judge_validation}
 
@@ -668,6 +711,11 @@ This appendix provides detailed judge validation results beyond the summary stat
 
 
 \clearpage
+
+% ======================================================================
+% Full Seven-Category Results
+% ======================================================================
+
 \section{Full Seven-Category Results}
 \label{app:seven_cat_results}
 
@@ -681,6 +729,11 @@ This appendix provides detailed judge validation results beyond the summary stat
 
 
 \clearpage
+
+% ======================================================================
+% Latency and Compute
+% ======================================================================
+
 \section{Latency and Compute}
 \label{app:latency}
 
@@ -724,6 +777,11 @@ The grand total leaves \$186 [127, 215] for development, debugging, failed runs,
 
 
 \clearpage
+
+% ======================================================================
+% Divergence Analysis
+% ======================================================================
+
 \section{Divergence Analysis}
 \label{app:divergence}
 
@@ -737,6 +795,11 @@ Under CorruptRAG-AK, we examine per-question divergence: for each of the 921 que
 
 
 \clearpage
+
+% ======================================================================
+% Clean-Conditioned Decomposition
+% ======================================================================
+
 \section{Clean-Conditioned Decomposition}
 \label{app:decomposition_cc}
 
@@ -761,6 +824,11 @@ Under clean-conditioning the total gaps are largely stable: MADAM-RAG shifts fro
 
 
 \clearpage
+
+% ======================================================================
+% Qualitative Examples
+% ======================================================================
+
 \section{Qualitative Examples}
 \label{app:qualitative}
 
