@@ -1,5 +1,9 @@
 \documentclass[11pt]{article}
 
+% Match output PDF version to the included architecture diagrams (PDF 1.7),
+% otherwise pdflatex emits "found PDF version <1.7>, but at most <1.5> allowed".
+\pdfminorversion=7
+
 % ---- Packages ----
 \usepackage[margin=1in]{geometry}
 \usepackage{amsmath,amssymb}
