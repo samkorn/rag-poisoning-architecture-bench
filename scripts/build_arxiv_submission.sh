@@ -4,16 +4,16 @@
 # Pipeline:
 #   1. Audit paper.tex for dependencies (figures, tables, bib, packages).
 #   2. Stage clean source into build/arxiv/staging/ (flat layout).
-#   3. Compile in a scratch dir (build/arxiv/build/) to verify and
-#      generate the .bbl that arXiv needs.
-#   4. Copy the .bbl into staging.
-#   5. Diff scratch-built PDF against repo paper.pdf (warn-only).
-#   6. tar from staging → build/arxiv/paper_arxiv.tar.gz
+#   3. Compile in a scratch dir (build/arxiv/build/) to verify the build
+#      end-to-end (incl. bibtex) — purely a smoke test.
+#   4. Diff scratch-built PDF against repo paper.pdf (warn-only).
+#   5. tar from staging → build/arxiv/paper_arxiv.tar.gz
 #
 # Everything under build/arxiv/ is gitignored (top-level `build/` rule).
 #
-# arXiv runs latex+bibtex on the uploaded source, so we ship .tex + .bbl
-# + figures + .bib + any custom .sty/.cls. We do NOT ship .aux/.log/.pdf.
+# arXiv runs latex+bibtex on the uploaded source. Per their current policy
+# we ship the .bib (NOT the precomputed .bbl) plus the .tex, figures, and
+# any custom .sty/.cls. We do NOT ship .aux/.bbl/.log/.pdf.
 
 set -euo pipefail
 
@@ -78,7 +78,7 @@ esac
 echo
 
 # ---------- Step 1: audit ----------
-echo "[1/12] Auditing $PAPER_TEX for dependencies..."
+echo "[1/11] Auditing $PAPER_TEX for dependencies..."
 
 # Figures referenced via \includegraphics{...} (basename, no extension assumed
 # present). Capture the brace argument; ignore the optional [..] arguments.
@@ -123,12 +123,12 @@ fi
 echo
 
 # ---------- Step 2: clean staging dir ----------
-echo "[2/12] Resetting staging dir at $STAGING_DIR ..."
+echo "[2/11] Resetting staging dir at $STAGING_DIR ..."
 rm -rf "$STAGING_DIR"
 mkdir -p "$STAGING_DIR"
 
 # ---------- Step 3: stage paper.tex with path rewrites ----------
-echo "[3/12] Copying paper.tex → staging with path flattening..."
+echo "[3/11] Copying paper.tex → staging with path flattening..."
 cp "$PAPER_TEX" "$STAGING_DIR/paper.tex"
 
 # Rewrite \graphicspath to local-only (./), since figures will be flat.
@@ -144,7 +144,7 @@ perl -pi -e 's|\\input\{tables/([^}]+)\}|\\input{$1}|g' "$STAGING_DIR/paper.tex"
 perl -pi -e 's|\\includegraphics(\[[^\]]*\])?\{[^{}]*/([^}/]+)\}|\\includegraphics$1\{$2\}|g' "$STAGING_DIR/paper.tex"
 
 # ---------- Step 4: copy figures flat ----------
-echo "[4/12] Copying figures flat into staging..."
+echo "[4/11] Copying figures flat into staging..."
 FIG_SEARCH_DIRS=(
     "$REPO_ROOT/analysis/figures"
     "$PAPER_DIR/assets"
@@ -179,7 +179,7 @@ if (( ${#MISSING_FIGS[@]} > 0 )); then
 fi
 
 # ---------- Step 5: copy tables flat ----------
-echo "[5/12] Copying tables flat into staging..."
+echo "[5/11] Copying tables flat into staging..."
 for inp in "${INPUTS[@]}"; do
     # Strip any directory prefix
     leaf="${inp##*/}"
@@ -201,7 +201,7 @@ for inp in "${INPUTS[@]}"; do
 done
 
 # ---------- Step 6: copy bib + custom styles ----------
-echo "[6/12] Copying .bib and any custom .sty/.cls..."
+echo "[6/11] Copying .bib and any custom .sty/.cls..."
 for ref in "${BIB_REFS[@]}"; do
     src="$REPO_ROOT/paper/$ref.bib"
     if [[ ! -f "$src" ]]; then
@@ -219,7 +219,7 @@ if (( ${#CUSTOM_STY[@]} > 0 )); then
 fi
 
 # ---------- Step 7: replace \today in the staged paper.tex ----------
-echo "[7/12] Replacing \\today with hardcoded date in staged paper.tex..."
+echo "[7/11] Replacing \\today with hardcoded date in staged paper.tex..."
 TODAY_STR="$(date "+%B %-d, %Y")"
 if grep -q '\\today' "$STAGING_DIR/paper.tex"; then
     # Replace \today only inside \date{...} (typical usage); to be safe,
@@ -232,7 +232,7 @@ else
 fi
 
 # ---------- Step 8: compile in scratch build dir ----------
-echo "[8/12] Compiling staged paper in scratch dir $BUILD_DIR ..."
+echo "[8/11] Compiling staged paper in scratch dir $BUILD_DIR ..."
 rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
 cp -R "$STAGING_DIR"/* "$BUILD_DIR/"
@@ -263,16 +263,10 @@ run_pdflatex
 run_pdflatex
 echo "    Compilation OK ($(ls -l paper.pdf | awk '{print $5}') bytes)."
 
-# ---------- Step 9: copy .bbl back to staging ----------
-if (( ${#BIB_REFS[@]} > 0 )); then
-    echo "[9/12] Copying paper.bbl back to staging..."
-    cp "$BUILD_DIR/paper.bbl" "$STAGING_DIR/paper.bbl"
-else
-    echo "[9/12] No external bib — skipping .bbl copy."
-fi
-
-# ---------- Step 10: PDF diff (warn-only) ----------
-echo "[10/12] Comparing scratch PDF to repo paper.pdf (warn-only)..."
+# ---------- Step 9: PDF diff (warn-only) ----------
+# Note: we deliberately do NOT copy paper.bbl back to staging. arXiv's
+# current policy is to receive the .bib and run bibtex itself.
+echo "[9/11] Comparing scratch PDF to repo paper.pdf (warn-only)..."
 NEW_PDF="$BUILD_DIR/paper.pdf"
 # Disable -e for this whole block — diff exits 1 on differences and we don't
 # want that to fail the script.
@@ -305,13 +299,14 @@ fi
 set -e
 
 # ---------- Step 11: bundle ----------
-echo "[11/12] Building tar.gz bundle from staging..."
+echo "[10/11] Building tar.gz bundle from staging..."
 cd "$STAGING_DIR"
 
-# Sanity-check: nothing in staging should be a build artifact.
+# Sanity-check: nothing in staging should be a build artifact. Note .bbl
+# is forbidden — arXiv runs bibtex itself and wants the .bib only.
 BAD=()
 shopt -s nullglob
-for f in *.aux *.log *.out *.toc *.blg *.fls *.fdb_latexmk *.synctex.gz paper.pdf; do
+for f in *.aux *.bbl *.log *.out *.toc *.blg *.fls *.fdb_latexmk *.synctex.gz paper.pdf; do
     [[ -f "$f" ]] && BAD+=("$f")
 done
 shopt -u nullglob
@@ -327,7 +322,7 @@ tar --exclude='.*' -czvf "$BUNDLE_PATH" *
 
 # ---------- Step 12: summary + cleanup ----------
 echo
-echo "[12/12] Summary"
+echo "[11/11] Summary"
 echo "------------------------------------------------------------"
 BUNDLE_BYTES="$(stat -f %z "$BUNDLE_PATH" 2>/dev/null || stat -c %s "$BUNDLE_PATH")"
 BUNDLE_HUMAN="$(du -h "$BUNDLE_PATH" | awk '{print $1}')"
