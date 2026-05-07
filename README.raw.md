@@ -155,10 +155,10 @@ Per-script breakdown:
 
 ### arXiv submission
 
-`scripts/build_arxiv_submission.sh` builds the tar.gz that gets uploaded to arxiv.org. It stages a clean copy of `paper.tex` next to flattened figure / table / `.bib` files, compiles in a throwaway scratch dir to verify the build and produce `paper.bbl` (arXiv runs `latex` + `bibtex` itself, but it ships the precomputed `.bbl` to avoid surprises), and bundles only source + `.bbl` — no `.aux`/`.log`/`.pdf`. The hardcoded `\today` in `paper.tex` is replaced with the build date in the staged copy so arXiv's periodic rebuilds don't drift the displayed date. Outputs land outside the repo:
+`scripts/build_arxiv_submission.sh` builds the tar.gz that gets uploaded to arxiv.org. It stages a clean copy of `paper.tex` next to flattened figure / table / `.bib` files, compiles in a throwaway scratch dir to verify the build and produce `paper.bbl` (arXiv runs `latex` + `bibtex` itself, but it ships the precomputed `.bbl` to avoid surprises), and bundles only source + `.bbl` — no `.aux`/`.log`/`.pdf`. The hardcoded `\today` in `paper.tex` is replaced with the build date in the staged copy so arXiv's periodic rebuilds don't drift the displayed date. All outputs land under `build/arxiv/` (gitignored):
 
-- `../paper_arxiv.tar.gz` — the bundle to upload via the arXiv web form.
-- `../arxiv-staging/` — kept for inspection; safe to delete afterward.
+- `build/arxiv/paper_arxiv.tar.gz` — the bundle to upload via the arXiv web form.
+- `build/arxiv/staging/` — kept for inspection; safe to delete afterward.
 
 Run it from the repo root:
 

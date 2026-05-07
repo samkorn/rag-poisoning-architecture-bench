@@ -3,12 +3,14 @@
 #
 # Pipeline:
 #   1. Audit paper.tex for dependencies (figures, tables, bib, packages).
-#   2. Stage clean source into ../arxiv-staging/ (flat layout).
-#   3. Compile in a scratch dir (../arxiv-staging-build/) to verify and
+#   2. Stage clean source into build/arxiv/staging/ (flat layout).
+#   3. Compile in a scratch dir (build/arxiv/build/) to verify and
 #      generate the .bbl that arXiv needs.
 #   4. Copy the .bbl into staging.
 #   5. Diff scratch-built PDF against repo paper.pdf (warn-only).
-#   6. tar from staging → ../paper_arxiv.tar.gz
+#   6. tar from staging → build/arxiv/paper_arxiv.tar.gz
+#
+# Everything under build/arxiv/ is gitignored (top-level `build/` rule).
 #
 # arXiv runs latex+bibtex on the uploaded source, so we ship .tex + .bbl
 # + figures + .bib + any custom .sty/.cls. We do NOT ship .aux/.log/.pdf.
@@ -22,14 +24,14 @@ PAPER_DIR="$REPO_ROOT/paper"
 PAPER_TEX="$PAPER_DIR/paper.tex"
 REPO_PDF="$PAPER_DIR/paper.pdf"
 
-STAGING_DIR="$REPO_ROOT/../arxiv-staging"
-BUILD_DIR="$REPO_ROOT/../arxiv-staging-build"
-BUNDLE_PATH="$REPO_ROOT/../paper_arxiv.tar.gz"
-
-# Resolve to absolute paths
-STAGING_DIR="$(cd "$REPO_ROOT/.." && pwd)/arxiv-staging"
-BUILD_DIR="$(cd "$REPO_ROOT/.." && pwd)/arxiv-staging-build"
-BUNDLE_PATH="$(cd "$REPO_ROOT/.." && pwd)/paper_arxiv.tar.gz"
+# All build outputs live under $REPO_ROOT/build/arxiv/, which is covered
+# by the top-level `build/` entry in .gitignore — nothing here gets
+# committed.
+ARXIV_BUILD_ROOT="$REPO_ROOT/build/arxiv"
+STAGING_DIR="$ARXIV_BUILD_ROOT/staging"
+BUILD_DIR="$ARXIV_BUILD_ROOT/build"
+BUNDLE_PATH="$ARXIV_BUILD_ROOT/paper_arxiv.tar.gz"
+mkdir -p "$ARXIV_BUILD_ROOT"
 
 # Tool paths (TeX Live not on PATH on this machine)
 PDFLATEX="${PDFLATEX:-/Library/TeX/texbin/pdflatex}"
