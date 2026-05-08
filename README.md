@@ -1,9 +1,7 @@
 <h1 align="center">Architecture Matters<br><sub>Comparing RAG Systems under Knowledge Base Poisoning</sub></h1>
 
 <p align="center">
-  <a href="https://arxiv.org/abs/2605.05632">arXiv</a>
-  &nbsp;·&nbsp;
-  <a href="paper/paper.pdf">Full Paper (PDF)</a>
+  <a href="https://arxiv.org/abs/2605.05632">Paper</a>
   &nbsp;·&nbsp;
   <a href="https://doi.org/10.5281/zenodo.19582217">Data</a>
   &nbsp;·&nbsp;
@@ -37,7 +35,7 @@ Retrieval-Augmented Generation systems are vulnerable to knowledge base poisonin
 - **Adversarial framing — not retrieval optimization — drives most of the gap** between naive and CorruptRAG-AK injection for three of four architectures. Once a poisoned document is retrieved, the content-reasoning stage is where architectures diverge, so generation-level defenses are the primary intervention target.
 - **MADAM-RAG detects contradictions but cannot resolve them.** Our reimplementation has the highest apparent contradiction-detection rate across all four architectures, yet produces a 41.4% non-answer rate even on clean inputs. Detection works; resolution does not.
 
-See the paper ([arXiv](https://arxiv.org/abs/2605.05632) · [PDF](paper/paper.pdf)) for the full analysis and caveats (notably, the LLM judge's ~48.5% precision on contradiction-detection labels, which makes those rates upper bounds).
+See the [paper](https://arxiv.org/abs/2605.05632) for the full analysis and caveats (notably, the LLM judge's ~48.5% precision on contradiction-detection labels, which makes those rates upper bounds).
 
 ## Quick start
 
@@ -166,21 +164,6 @@ flowchart LR
 | [`run_analysis.sh`](scripts/run_analysis.sh) | Executes `analysis/analysis.ipynb` in place, regenerating 15 figures, 7 LaTeX table fragments, and the intermediate parquet join. **Overwrites committed deliverables — review `git diff` before committing.** | — | ~2–5 min | `analysis/figures/*.{png,pdf}`, `paper/tables/*.tex`, `analysis/intermediate/merged_results.parquet` |
 | [`generate_paper.sh`](scripts/generate_paper.sh) | Canonical LaTeX build: `pdflatex → bibtex → pdflatex → pdflatex`. `--quick` runs one pass off cached `.bbl`/`.aux`. | — | ~30 sec | `paper/paper.pdf` |
 | [`run_all.sh`](scripts/run_all.sh) | Chains setup → data → embeddings → launch-experiments. Stops after the detached Modal launch and prints resume instructions. `--resume` runs analysis + paper; `--analysis-only` swaps regeneration for the Zenodo download. | — | See above | — |
-
-### arXiv submission
-
-[`scripts/build_arxiv_submission.sh`](scripts/build_arxiv_submission.sh) builds the tar.gz that gets uploaded to arxiv.org. It stages a clean copy of `paper.tex` next to flattened figure / table / `.bib` files, compiles in a throwaway scratch dir as a smoke test, and bundles only the source — no `.bbl`/`.aux`/`.log`/`.pdf`. arXiv's current policy is to receive the `.bib` and run `bibtex` itself, so we ship the `.bib` and not the precomputed `.bbl`. The hardcoded `\today` in `paper.tex` is replaced with the build date in the staged copy so arXiv's periodic rebuilds don't drift the displayed date. All outputs land under `build/arxiv/` (gitignored):
-
-- `build/arxiv/paper_arxiv.tar.gz` — the bundle to upload via the arXiv web form.
-- `build/arxiv/staging/` — kept for inspection; safe to delete afterward.
-
-Run it from the repo root:
-
-```bash
-bash scripts/build_arxiv_submission.sh
-```
-
-For v2+ submissions, edit `paper/paper.tex`, regenerate figures/tables via the analysis notebook if needed, recompile `paper/paper.pdf` with `scripts/generate_paper.sh`, then re-run this script and upload the new tarball as a replacement on the same arXiv ID.
 
 ## Experimental setup
 

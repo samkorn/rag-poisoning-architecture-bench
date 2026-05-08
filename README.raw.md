@@ -2,8 +2,7 @@
 
 # Architecture Matters: Comparing RAG Systems under Knowledge Base Poisoning
 
-- arXiv: https://arxiv.org/abs/2605.05632
-- Paper PDF: paper/paper.pdf
+- Paper: https://arxiv.org/abs/2605.05632
 - Data: https://doi.org/10.5281/zenodo.19582217
 - Blog Post: https://open.substack.com/pub/sammykaytv/p/your-rag-architecture-matters-more
 
@@ -21,7 +20,7 @@ Retrieval-Augmented Generation systems are vulnerable to knowledge base poisonin
 - **Adversarial framing — not retrieval optimization — drives most of the gap** between naive and CorruptRAG-AK injection for three of four architectures. Once a poisoned document is retrieved, the content-reasoning stage is where architectures diverge, so generation-level defenses are the primary intervention target.
 - **MADAM-RAG detects contradictions but cannot resolve them.** Our reimplementation has the highest apparent contradiction-detection rate across all four architectures, yet produces a 41.4% non-answer rate even on clean inputs. Detection works; resolution does not.
 
-See the paper (arXiv: https://arxiv.org/abs/2605.05632 · PDF: paper/paper.pdf) for the full analysis and caveats (notably, the LLM judge's ~48.5% precision on contradiction-detection labels, which makes those rates upper bounds).
+See the paper at https://arxiv.org/abs/2605.05632 for the full analysis and caveats (notably, the LLM judge's ~48.5% precision on contradiction-detection labels, which makes those rates upper bounds).
 
 ## Quick start
 
@@ -153,21 +152,6 @@ Per-script breakdown:
 
 - **scripts/run_all.sh**
   Chains setup → data → embeddings → launch-experiments. Stops after the detached Modal launch and prints resume instructions. `--resume` runs analysis + paper; `--analysis-only` swaps regeneration for the Zenodo download.
-
-### arXiv submission
-
-`scripts/build_arxiv_submission.sh` builds the tar.gz that gets uploaded to arxiv.org. It stages a clean copy of `paper.tex` next to flattened figure / table / `.bib` files, compiles in a throwaway scratch dir as a smoke test, and bundles only the source — no `.bbl`/`.aux`/`.log`/`.pdf`. arXiv's current policy is to receive the `.bib` and run `bibtex` itself, so we ship the `.bib` and not the precomputed `.bbl`. The hardcoded `\today` in `paper.tex` is replaced with the build date in the staged copy so arXiv's periodic rebuilds don't drift the displayed date. All outputs land under `build/arxiv/` (gitignored):
-
-- `build/arxiv/paper_arxiv.tar.gz` — the bundle to upload via the arXiv web form.
-- `build/arxiv/staging/` — kept for inspection; safe to delete afterward.
-
-Run it from the repo root:
-
-```bash
-bash scripts/build_arxiv_submission.sh
-```
-
-For v2+ submissions, edit `paper/paper.tex`, regenerate figures/tables via the analysis notebook if needed, recompile `paper/paper.pdf` with `scripts/generate_paper.sh`, then re-run this script and upload the new tarball as a replacement on the same arXiv ID.
 
 ## Experimental setup
 
