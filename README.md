@@ -1,7 +1,9 @@
 <h1 align="center">Architecture Matters<br><sub>Comparing RAG Systems under Knowledge Base Poisoning</sub></h1>
 
 <p align="center">
-  <a href="paper/paper.pdf">Full Paper</a>
+  <a href="https://arxiv.org/abs/2605.05632">arXiv</a>
+  &nbsp;·&nbsp;
+  <a href="paper/paper.pdf">Full Paper (PDF)</a>
   &nbsp;·&nbsp;
   <a href="https://doi.org/10.5281/zenodo.19582217">Data</a>
   &nbsp;·&nbsp;
@@ -9,13 +11,14 @@
 </p>
 
 <p align="center">
+  <a href="https://arxiv.org/abs/2605.05632"><img alt="arXiv" src="https://img.shields.io/badge/arXiv-2605.05632-b31b1b.svg"></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-blue.svg"></a>
   <a href="https://www.python.org/downloads/release/python-3120/"><img alt="Python 3.12" src="https://img.shields.io/badge/python-3.12-blue.svg"></a>
   <a href="https://doi.org/10.5281/zenodo.19582217"><img alt="DOI" src="https://zenodo.org/badge/DOI/10.5281/zenodo.19582217.svg"></a>
 </p>
 
 <p align="center">
-  <a href="paper/paper.pdf"><img src="assets/paper_thumbnail.png" width="50%" alt="Paper — click to open PDF"></a>
+  <a href="https://arxiv.org/abs/2605.05632"><img src="assets/paper_thumbnail.png" width="50%" alt="Paper — click to open on arXiv"></a>
 </p>
 
 *Reading this as raw markdown? See [README.raw.md](README.raw.md) for a version stripped of HTML tags and the mermaid diagram.*
@@ -34,7 +37,7 @@ Retrieval-Augmented Generation systems are vulnerable to knowledge base poisonin
 - **Adversarial framing — not retrieval optimization — drives most of the gap** between naive and CorruptRAG-AK injection for three of four architectures. Once a poisoned document is retrieved, the content-reasoning stage is where architectures diverge, so generation-level defenses are the primary intervention target.
 - **MADAM-RAG detects contradictions but cannot resolve them.** Our reimplementation has the highest apparent contradiction-detection rate across all four architectures, yet produces a 41.4% non-answer rate even on clean inputs. Detection works; resolution does not.
 
-See the [paper](paper/paper.pdf) for the full analysis and caveats (notably, the LLM judge's ~48.5% precision on contradiction-detection labels, which makes those rates upper bounds).
+See the paper ([arXiv](https://arxiv.org/abs/2605.05632) · [PDF](paper/paper.pdf)) for the full analysis and caveats (notably, the LLM judge's ~48.5% precision on contradiction-detection labels, which makes those rates upper bounds).
 
 ## Quick start
 
@@ -211,11 +214,13 @@ All four use **gpt-5-mini** as the backbone LLM, so cross-architecture differenc
 
 ```bibtex
 @misc{korn2026ragpoisoningarch,
-  title        = {Architecture Matters: Comparing RAG Systems under Knowledge Base Poisoning},
-  author       = {Korn, Samuel},
-  year         = {2026},
-  howpublished = {\url{https://github.com/samkorn/rag-poisoning-architecture-bench}},
-  note         = {Data archived at Zenodo, DOI \href{https://doi.org/10.5281/zenodo.19582217}{10.5281/zenodo.19582217}}
+  title         = {Architecture Matters: Comparing RAG Systems under Knowledge Base Poisoning},
+  author        = {Korn, Samuel},
+  year          = {2026},
+  eprint        = {2605.05632},
+  archivePrefix = {arXiv},
+  url           = {https://arxiv.org/abs/2605.05632},
+  note          = {Code at \url{https://github.com/samkorn/rag-poisoning-architecture-bench}; data archived at Zenodo, DOI \href{https://doi.org/10.5281/zenodo.19582217}{10.5281/zenodo.19582217}}
 }
 ```
 
