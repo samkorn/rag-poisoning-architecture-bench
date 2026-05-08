@@ -2,11 +2,11 @@
 
 # Architecture Matters: Comparing RAG Systems under Knowledge Base Poisoning
 
-- Paper: paper/paper.pdf
+- Paper: https://arxiv.org/abs/2605.05632
 - Data: https://doi.org/10.5281/zenodo.19582217
 - Blog Post: https://open.substack.com/pub/sammykaytv/p/your-rag-architecture-matters-more
 
-License: MIT  ·  Python 3.12  ·  DOI: https://doi.org/10.5281/zenodo.19582217
+arXiv:2605.05632  ·  License: MIT  ·  Python 3.12  ·  DOI: https://doi.org/10.5281/zenodo.19582217
 
 ## Overview
 
@@ -20,7 +20,7 @@ Retrieval-Augmented Generation systems are vulnerable to knowledge base poisonin
 - **Adversarial framing — not retrieval optimization — drives most of the gap** between naive and CorruptRAG-AK injection for three of four architectures. Once a poisoned document is retrieved, the content-reasoning stage is where architectures diverge, so generation-level defenses are the primary intervention target.
 - **MADAM-RAG detects contradictions but cannot resolve them.** Our reimplementation has the highest apparent contradiction-detection rate across all four architectures, yet produces a 41.4% non-answer rate even on clean inputs. Detection works; resolution does not.
 
-See the paper at paper/paper.pdf for the full analysis and caveats (notably, the LLM judge's ~48.5% precision on contradiction-detection labels, which makes those rates upper bounds).
+See the paper at https://arxiv.org/abs/2605.05632 for the full analysis and caveats (notably, the LLM judge's ~48.5% precision on contradiction-detection labels, which makes those rates upper bounds).
 
 ## Quick start
 
@@ -190,11 +190,13 @@ All four use **gpt-5-mini** as the backbone LLM, so cross-architecture differenc
 
 ```bibtex
 @misc{korn2026ragpoisoningarch,
-  title        = {Architecture Matters: Comparing RAG Systems under Knowledge Base Poisoning},
-  author       = {Korn, Samuel},
-  year         = {2026},
-  howpublished = {\url{https://github.com/samkorn/rag-poisoning-architecture-bench}},
-  note         = {Data archived at Zenodo, DOI \href{https://doi.org/10.5281/zenodo.19582217}{10.5281/zenodo.19582217}}
+  title         = {Architecture Matters: Comparing RAG Systems under Knowledge Base Poisoning},
+  author        = {Korn, Samuel},
+  year          = {2026},
+  eprint        = {2605.05632},
+  archivePrefix = {arXiv},
+  url           = {https://arxiv.org/abs/2605.05632},
+  note          = {Code at \url{https://github.com/samkorn/rag-poisoning-architecture-bench}; data archived at Zenodo, DOI \href{https://doi.org/10.5281/zenodo.19582217}{10.5281/zenodo.19582217}}
 }
 ```
 
